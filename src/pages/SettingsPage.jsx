@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Settings as SettingsIcon, Download, Upload, Trash2, AlertTriangle, Check } from 'lucide-react';
+import { Settings as SettingsIcon, Download, Upload, Trash2, AlertTriangle, Check, Globe, Mic } from 'lucide-react';
 import { useData, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, Field, InfoBox } from '../components/UI';
+import { useT, getLang, setLang, availableLangs } from '../i18n';
+import { ttsIsSupported, sttIsSupported } from '../utils/voice';
 
 const RUBROS = [
     { id: 'general', nombre: 'General', desc: 'Cualquier negocio' },
@@ -15,8 +17,15 @@ const RUBROS = [
 export default function SettingsPage() {
     const { state, actions } = useData();
     const [savedMsg, setSavedMsg] = useState('');
+    const t = useT();
+    const currentLang = getLang();
 
-    const showSaved = () => { setSavedMsg('Guardado ✓'); setTimeout(() => setSavedMsg(''), 1500); };
+    const showSaved = () => { setSavedMsg(t('settings.saved')); setTimeout(() => setSavedMsg(''), 1500); };
+
+    const onLangChange = (lang) => {
+        setLang(lang);
+        showSaved();
+    };
 
     const onRubroChange = (rubro) => {
         actions.updateBusiness({ rubro });
@@ -59,15 +68,100 @@ export default function SettingsPage() {
         <div>
             <PageHeader
                 icon={SettingsIcon}
-                title="Configuración"
-                subtitle="Datos del negocio, integraciones y backup"
+                title={t('settings.title')}
+                subtitle={t('settings.subtitle')}
                 help={SECTION_HELP.settings}
                 actions={savedMsg ? <span style={{ color: 'var(--success)', fontSize: 13 }}><Check size={14} /> {savedMsg}</span> : null}
             />
 
             <div style={{ display: 'grid', gap: 16 }}>
+                {/* ═══════════ IDIOMA / LANGUAGE / 언어 ═══════════ */}
+                <Card>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                        <Globe size={20} style={{ color: 'var(--accent)' }} />
+                        <div>
+                            <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500 }}>
+                                {t('settings.language_section')}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                {t('settings.language_hint')}
+                            </div>
+                        </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginTop: 12 }}>
+                        {availableLangs().map(lang => (
+                            <button
+                                key={lang.code}
+                                onClick={() => onLangChange(lang.code)}
+                                style={{
+                                    padding: '14px 12px',
+                                    borderRadius: 12,
+                                    border: currentLang === lang.code ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                                    background: currentLang === lang.code ? 'var(--accent-soft)' : 'var(--bg-elevated)',
+                                    color: currentLang === lang.code ? 'var(--accent)' : 'var(--text-primary)',
+                                    cursor: 'pointer',
+                                    fontFamily: 'var(--font-display)',
+                                    fontSize: 14,
+                                    fontWeight: currentLang === lang.code ? 700 : 500,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                <span style={{ fontSize: 22 }}>{lang.flag}</span>
+                                <span>{lang.native}</span>
+                                {currentLang === lang.code && <Check size={16} />}
+                            </button>
+                        ))}
+                    </div>
+                </Card>
+
+                {/* ═══════════ VOZ · Voice · 음성 ═══════════ */}
+                <Card>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                        <Mic size={20} style={{ color: 'var(--accent)' }} />
+                        <div>
+                            <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500 }}>
+                                🎙️ {t('voice.voice_mode')}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                {currentLang === 'ko'
+                                    ? 'CELA 챗봇의 음성 기능. Web Speech API는 무료이며 브라우저에 내장되어 있습니다.'
+                                    : currentLang === 'en'
+                                        ? 'Voice capability for CELA chatbot. Web Speech API is free and built into browsers.'
+                                        : 'Capacidad de voz para el chatbot CELA. Web Speech API es gratis y viene en el browser.'}
+                            </div>
+                        </div>
+                    </div>
+                    <div style={{ display: 'grid', gap: 8, marginBottom: 14, fontSize: 13 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {sttIsSupported()
+                                ? <span style={{ color: 'var(--success)' }}>✓</span>
+                                : <span style={{ color: 'var(--danger)' }}>✗</span>}
+                            <span>{currentLang === 'ko' ? '음성 인식 (STT)' : currentLang === 'en' ? 'Voice recognition (STT)' : 'Reconocimiento de voz (STT)'}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {ttsIsSupported()
+                                ? <span style={{ color: 'var(--success)' }}>✓</span>
+                                : <span style={{ color: 'var(--danger)' }}>✗</span>}
+                            <span>{currentLang === 'ko' ? '음성 합성 (TTS)' : currentLang === 'en' ? 'Voice synthesis (TTS)' : 'Síntesis de voz (TTS)'}</span>
+                        </div>
+                    </div>
+                    <Field label={t('voice.elevenlabs_key')}>
+                        <input
+                            className="input"
+                            type="password"
+                            placeholder="sk_..."
+                            value={state.integraciones.elevenLabsKey || ''}
+                            onChange={e => { actions.updateIntegraciones({ elevenLabsKey: e.target.value }); showSaved(); }}
+                        />
+                    </Field>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                        {t('voice.elevenlabs_hint')}
+                    </div>
+                </Card>
+
                 {/* DATOS DEL NEGOCIO */}
-                <Card title="Datos del negocio" subtitle="Información básica y rubro">
+                <Card title={t('settings.business_data')} subtitle={currentLang === 'ko' ? '기본 정보 및 업종' : currentLang === 'en' ? 'Basic info and industry' : 'Información básica y rubro'}>
                     <div className="form-grid">
                         <Field label="Nombre del negocio">
                             <input className="input" value={state.business.name || ''} onChange={e => { actions.updateBusiness({ name: e.target.value }); showSaved(); }} />

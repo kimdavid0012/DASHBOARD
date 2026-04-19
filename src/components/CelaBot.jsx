@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageCircle, X as XIcon, Send, Sparkles, Brain } from 'lucide-react';
+import { MessageCircle, X as XIcon, Send, Sparkles, Brain, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { useData, getRubroLabels } from '../store/DataContext';
+import { useT, getLang, langInstructions } from '../i18n';
+import { createRecognizer, sttIsSupported, ttsIsSupported, speak, stopSpeaking, isSpeaking } from '../utils/voice';
 
 // ═══════════════════════════════════════════════════════════════════
 // RUBRO-SPECIFIC SYSTEM PROMPTS
@@ -73,15 +75,15 @@ Top 5 más vendidos: ${topProductos.join(', ') || 'aún no hay ventas'}
 
 ─── TU ROL ───
 
-1. Respondé SIEMPRE en español argentino (usando "vos", "tenés", "querés"). 
+1. ⚠️ IDIOMA CRÍTICO: ${langInstructions()} Esta instrucción tiene prioridad absoluta — incluso si el usuario te escribe en otro idioma, TU RESPUESTA debe estar en el idioma especificado arriba.
 2. Sé directo y práctico. Sin rodeos. Sin "como modelo de lenguaje".
 3. Cuando el usuario pregunte algo, usá los números de arriba. Si te piden data que no está, decilo.
-4. Podés RECOMENDAR acciones concretas (ej: "deberías reponer X productos", "subí el precio de Y porque...").
+4. Podés RECOMENDAR acciones concretas.
 5. Podés ANALIZAR: ventas, rentabilidad, stock, empleados, proveedores.
 6. NO PODÉS operar el POS ni registrar ventas por el usuario. Sí podés ayudar a cargar productos, gastos, empleados, clientes, proveedores, etc. guiando paso a paso.
-7. Cuando respondas, pensá primero como un dueño experimentado del rubro. Después como un consultor.
+7. Pensá primero como un dueño experimentado del rubro. Después como un consultor.
 8. Si detectás algo raro en la data (ej: caída de ventas, gasto anómalo, margen negativo), señalalo proactivamente.
-9. Respuestas cortas y útiles. Bullet points cuando corresponda. Evitá párrafos largos.
+9. Respuestas cortas y útiles. Bullet points cuando corresponda.
 
 ─── EJEMPLOS DE BUENAS RESPUESTAS ───
 
@@ -106,27 +108,120 @@ export default function CelaBot() {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
+    const [listening, setListening] = useState(false);
+    const [speaking, setSpeaking] = useState(false);
+    const [autoSpeak, setAutoSpeak] = useState(() => {
+        return localStorage.getItem('cela_auto_speak') === 'true';
+    });
+    const [voiceError, setVoiceError] = useState('');
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
+    const recognizerRef = useRef(null);
 
     const hasKey = !!(state.integraciones.anthropicKey || state.integraciones.openaiKey);
     const labels = getRubroLabels(state.business.rubro);
+    const t = useT();
+    const sttOk = sttIsSupported();
+    const ttsOk = ttsIsSupported();
+    const elevenLabsKey = state.integraciones.elevenLabsKey || null;
+
+    // Toggle auto-speak preference
+    const toggleAutoSpeak = () => {
+        const next = !autoSpeak;
+        setAutoSpeak(next);
+        localStorage.setItem('cela_auto_speak', next ? 'true' : 'false');
+        if (!next && speaking) {
+            stopSpeaking();
+            setSpeaking(false);
+        }
+    };
+
+    // Start voice recognition
+    const startListening = () => {
+        if (!sttOk) {
+            setVoiceError(t('voice.unsupported_stt'));
+            setTimeout(() => setVoiceError(''), 4000);
+            return;
+        }
+        if (listening) {
+            recognizerRef.current?.stop();
+            return;
+        }
+        // Stop any ongoing TTS before listening
+        if (isSpeaking()) {
+            stopSpeaking();
+            setSpeaking(false);
+        }
+
+        setVoiceError('');
+        try {
+            const rec = createRecognizer({
+                lang: getLang(),
+                continuous: false,
+                onResult: (text, isFinal) => {
+                    setInput(text);
+                    if (isFinal) {
+                        // Auto-send when final transcript received
+                        setTimeout(() => {
+                            sendMessage(text);
+                        }, 200);
+                    }
+                },
+                onError: (err) => {
+                    setVoiceError(err.message);
+                    setListening(false);
+                    setTimeout(() => setVoiceError(''), 5000);
+                },
+                onEnd: () => {
+                    setListening(false);
+                }
+            });
+            recognizerRef.current = rec;
+            rec.start();
+            setListening(true);
+        } catch (err) {
+            setVoiceError(err.message);
+            setTimeout(() => setVoiceError(''), 5000);
+        }
+    };
+
+    // Speak a given text in current language
+    const speakText = async (text) => {
+        if (!ttsOk || !text) return;
+        try {
+            setSpeaking(true);
+            await speak(text, {
+                lang: getLang(),
+                elevenLabsKey,
+                onEnd: () => setSpeaking(false)
+            });
+        } catch (err) {
+            console.warn('TTS failed:', err);
+            setSpeaking(false);
+        }
+    };
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            recognizerRef.current?.abort();
+            stopSpeaking();
+        };
+    }, []);
 
     // Welcome message on first open
     useEffect(() => {
         if (open && messages.length === 0) {
-            const rubroGreeting = {
-                kiosco: '¿Querés saber cómo van las ventas del día, qué reponer o algún análisis puntual?',
-                restaurante: '¿Querés analizar qué platos rinden más, revisar costos o ver cómo va la semana?',
-                accesorios: '¿Hablamos de qué se vende mejor, qué conviene reponer o analizamos margen por producto?',
-                servicios: '¿Querés ver clientes activos, facturación del mes o analizar retención?',
-                general: '¿En qué te puedo ayudar hoy?'
-            }[state.business.rubro] || '¿En qué te ayudo?';
-
-            setMessages([{
-                role: 'assistant',
-                content: `¡Hola! Soy CELA, tu asistente de ${state.business.name || 'Dashboard'}. ${rubroGreeting}`
-            }]);
+            const rubroGreeting = t(`bot.greetings_by_rubro.${state.business.rubro}`) || t('bot.greetings_by_rubro.general');
+            const greeting = t('bot.greeting', {
+                business: state.business.name || 'Dashboard',
+                prompt: rubroGreeting
+            });
+            setMessages([{ role: 'assistant', content: greeting }]);
+            // Auto-speak welcome if auto-speak enabled
+            if (autoSpeak && ttsOk) {
+                setTimeout(() => speakText(greeting), 300);
+            }
         }
     }, [open]);
 
@@ -153,6 +248,7 @@ export default function CelaBot() {
                 const reply = generateLocalReply(text, state);
                 setMessages([...newMessages, { role: 'assistant', content: reply }]);
                 setLoading(false);
+                if (autoSpeak && ttsOk) speakText(reply);
                 return;
             }
 
@@ -201,28 +297,22 @@ export default function CelaBot() {
             }
 
             setMessages([...newMessages, { role: 'assistant', content: reply }]);
+            if (autoSpeak && ttsOk && reply) speakText(reply);
         } catch (err) {
-            setMessages([...newMessages, {
-                role: 'assistant',
-                content: `⚠️ No pude conectar con la IA: ${err.message}\n\nRevisá tu API key en Configuración → Integraciones. Mientras tanto puedo responder con datos básicos.`
-            }]);
+            const errMsg = t('bot.error_connect', { error: err.message });
+            setMessages([...newMessages, { role: 'assistant', content: errMsg }]);
         } finally {
             setLoading(false);
         }
     };
 
-    const quickActions = {
-        kiosco: ['¿Cómo voy hoy?', 'Qué reponer', 'Productos con mayor margen'],
-        restaurante: ['Ventas de hoy', 'Platos más pedidos', 'Análisis de mesas'],
-        accesorios: ['Top ventas', 'Stock bajo', 'Margen por categoría'],
-        servicios: ['Mis clientes', 'Servicios más pedidos', 'Facturación del mes'],
-        general: ['¿Cómo va el negocio?', 'Qué debería vigilar', 'Resumen del mes']
-    }[state.business.rubro] || ['¿Cómo voy?', 'Resumen', 'Análisis'];
+    const quickActions = t(`bot.quick_actions.${state.business.rubro}`);
+    const quickActionsList = Array.isArray(quickActions) ? quickActions : t('bot.quick_actions.general');
 
     return (
         <>
             {!open && (
-                <button className="bot-fab" onClick={() => setOpen(true)} title="Hablar con CELA">
+                <button className="bot-fab" onClick={() => setOpen(true)} title={t('bot.title')}>
                     <Sparkles size={24} />
                 </button>
             )}
@@ -232,11 +322,31 @@ export default function CelaBot() {
                     <div className="bot-header">
                         <div className="bot-avatar">C</div>
                         <div style={{ flex: 1 }}>
-                            <div className="bot-title">CELA</div>
+                            <div className="bot-title">{t('bot.title')}</div>
                             <div className="bot-subtitle">
-                                {hasKey ? '● Inteligencia conectada' : '○ Modo básico (sin API key)'}
+                                {hasKey ? t('bot.connected') : t('bot.basic_mode')}
                             </div>
                         </div>
+                        {ttsOk && (
+                            <button
+                                className="btn btn-ghost btn-icon btn-sm"
+                                onClick={() => {
+                                    if (speaking) {
+                                        stopSpeaking();
+                                        setSpeaking(false);
+                                    } else {
+                                        toggleAutoSpeak();
+                                    }
+                                }}
+                                title={speaking ? t('voice.stop_speaking') : autoSpeak ? t('voice.mute') : t('voice.speak_response')}
+                                style={{
+                                    color: speaking ? 'var(--accent)' : autoSpeak ? 'var(--accent)' : 'var(--text-muted)',
+                                    animation: speaking ? 'pulse-voice 1s infinite' : 'none'
+                                }}
+                            >
+                                {autoSpeak || speaking ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                            </button>
+                        )}
                         <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setOpen(false)}>
                             <XIcon size={16} />
                         </button>
@@ -244,7 +354,18 @@ export default function CelaBot() {
 
                     <div className="bot-messages">
                         {messages.map((m, i) => (
-                            <div key={i} className={`bot-msg ${m.role}`}>{m.content}</div>
+                            <div key={i} className={`bot-msg ${m.role}`}>
+                                {m.content}
+                                {m.role === 'assistant' && ttsOk && (
+                                    <button
+                                        className="bot-msg-speak"
+                                        onClick={() => speaking ? (stopSpeaking(), setSpeaking(false)) : speakText(m.content)}
+                                        title={speaking ? t('voice.stop_speaking') : t('voice.speak_response')}
+                                    >
+                                        {speaking ? <VolumeX size={11} /> : <Volume2 size={11} />}
+                                    </button>
+                                )}
+                            </div>
                         ))}
 
                         {loading && (
@@ -253,9 +374,22 @@ export default function CelaBot() {
                             </div>
                         )}
 
-                        {messages.length === 1 && !loading && (
+                        {listening && (
+                            <div className="bot-listening">
+                                <Mic size={14} /> <span>{t('voice.listening')}</span>
+                                <div className="listening-dots"><span></span><span></span><span></span></div>
+                            </div>
+                        )}
+
+                        {voiceError && (
+                            <div className="bot-voice-error">
+                                ⚠️ {voiceError}
+                            </div>
+                        )}
+
+                        {messages.length === 1 && !loading && !listening && Array.isArray(quickActionsList) && (
                             <div className="flex gap-2 mt-2" style={{ flexWrap: 'wrap' }}>
-                                {quickActions.map(q => (
+                                {quickActionsList.map(q => (
                                     <button key={q} className="bot-quick-action" onClick={() => sendMessage(q)}>
                                         {q}
                                     </button>
@@ -267,13 +401,23 @@ export default function CelaBot() {
                     </div>
 
                     <form className="bot-input-area" onSubmit={(e) => { e.preventDefault(); sendMessage(); }}>
+                        {sttOk && (
+                            <button
+                                type="button"
+                                className={`bot-mic ${listening ? 'active' : ''}`}
+                                onClick={startListening}
+                                title={listening ? t('voice.stop_listening') : t('voice.listen')}
+                            >
+                                {listening ? <MicOff size={16} /> : <Mic size={16} />}
+                            </button>
+                        )}
                         <input
                             ref={inputRef}
                             className="bot-input"
-                            placeholder="Preguntale a CELA..."
+                            placeholder={listening ? t('voice.listening') : t('bot.placeholder')}
                             value={input}
                             onChange={e => setInput(e.target.value)}
-                            disabled={loading}
+                            disabled={loading || listening}
                         />
                         <button type="submit" className="bot-send" disabled={!input.trim() || loading}>
                             <Send size={16} />

@@ -1724,3 +1724,128 @@ h1, h2, h3, h4, h5, h6 {
     .content { padding: 0; }
     body { background: white !important; color: #222 !important; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   CELA Bot — Voice UI (v4.2)
+   ═══════════════════════════════════════════════════════════ */
+
+/* Microphone button (left of input) */
+.bot-mic {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s var(--ease);
+    flex-shrink: 0;
+}
+
+.bot-mic:hover {
+    border-color: var(--border-accent);
+    color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.bot-mic.active {
+    background: rgba(251, 113, 133, 0.15);
+    border-color: rgba(251, 113, 133, 0.4);
+    color: var(--danger, #fb7185);
+    animation: pulse-mic 1.2s infinite;
+}
+
+@keyframes pulse-mic {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(251, 113, 133, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(251, 113, 133, 0);
+    }
+}
+
+/* Listening indicator (shows while voice recognition is active) */
+.bot-listening {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    margin: 6px 0;
+    background: var(--accent-soft);
+    border: 1px solid var(--border-accent);
+    border-radius: 12px;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.listening-dots {
+    display: inline-flex;
+    gap: 3px;
+    margin-left: auto;
+}
+
+.listening-dots span {
+    display: block;
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: listen-bounce 1.2s infinite ease-in-out;
+}
+
+.listening-dots span:nth-child(2) { animation-delay: 0.15s; }
+.listening-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes listen-bounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+    40% { transform: scale(1.0); opacity: 1; }
+}
+
+/* Voice error banner */
+.bot-voice-error {
+    padding: 10px 12px;
+    margin: 6px 0;
+    background: rgba(251, 113, 133, 0.08);
+    border: 1px solid rgba(251, 113, 133, 0.3);
+    border-radius: 10px;
+    color: var(--danger, #fb7185);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+/* Speak button on each assistant message */
+.bot-msg-speak {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 8px;
+    padding: 3px 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s var(--ease);
+    vertical-align: middle;
+    opacity: 0.6;
+}
+
+.bot-msg.assistant:hover .bot-msg-speak {
+    opacity: 1;
+}
+
+.bot-msg-speak:hover {
+    color: var(--accent);
+    border-color: var(--border-accent);
+    background: var(--accent-soft);
+}
+
+/* Pulse animation for header volume button when speaking */
+@keyframes pulse-voice {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.92); }
+}

@@ -7,8 +7,9 @@ import {
     Armchair, CalendarClock, RotateCcw, FileText, Upload, Shield,
     CheckCircle2, AlertCircle, RefreshCw, Cloud, CloudOff, User
 } from 'lucide-react';
-import { DataProvider, useData, getRubroLabels, getRubroConfig, shouldShowSection } from './store/DataContext';
+import { DataProvider, useData, getRubroConfig, shouldShowSection } from './store/DataContext';
 import { AuthProvider, useAuth } from './store/AuthContext';
+import { useT, getRubroLabelsI18n } from './i18n';
 import DashboardHome from './pages/DashboardHome';
 import InformesPage from './pages/InformesPage';
 import SucursalesPage from './pages/SucursalesPage';
@@ -37,15 +38,16 @@ const RUBRO_EMOJI = {
 // ── Save indicator chip for topbar ────────────────────────────────
 function SaveIndicator() {
     const { saveStatus } = useData();
+    const t = useT();
     if (!saveStatus) return null;
     const { saving, lastSaved, lastError, source } = saveStatus;
 
-    if (saving) return <div className="save-indicator saving"><RefreshCw size={12} className="spin" /><span>Guardando…</span></div>;
-    if (lastError) return <div className="save-indicator error" title={lastError}><AlertCircle size={12} /><span>Error</span></div>;
+    if (saving) return <div className="save-indicator saving"><RefreshCw size={12} className="spin" /><span>{t('app.save_indicator.saving')}</span></div>;
+    if (lastError) return <div className="save-indicator error" title={lastError}><AlertCircle size={12} /><span>{t('app.save_indicator.error')}</span></div>;
     if (lastSaved) {
         const secs = Math.floor((Date.now() - new Date(lastSaved).getTime()) / 1000);
         const ago = secs < 60 ? `${secs}s` : secs < 3600 ? `${Math.floor(secs / 60)}m` : `${Math.floor(secs / 3600)}h`;
-        return <div className="save-indicator ok" title={`Guardado hace ${ago} en ${source}`}><CheckCircle2 size={12} /><span>✓ Local</span></div>;
+        return <div className="save-indicator ok" title={`${ago} · ${source}`}><CheckCircle2 size={12} /><span>{t('app.save_indicator.ok')}</span></div>;
     }
     return null;
 }
@@ -53,6 +55,7 @@ function SaveIndicator() {
 // ── Cloud sync indicator (solo si está en modo cloud) ────────────
 function CloudSyncIndicator({ onNavigate }) {
     const { isCloud, syncStatus } = useAuth();
+    const t = useT();
     if (!isCloud) return null;
 
     const { syncing, lastSyncAt, error } = syncStatus;
@@ -61,10 +64,9 @@ function CloudSyncIndicator({ onNavigate }) {
             className={`save-indicator ${error ? 'error' : syncing ? 'saving' : 'ok'}`}
             onClick={() => onNavigate?.('account')}
             style={{ cursor: 'pointer' }}
-            title="Click para ver estado de sync"
         >
             {syncing ? <RefreshCw size={12} className="spin" /> : error ? <AlertCircle size={12} /> : <Cloud size={12} />}
-            <span>{syncing ? 'Sync...' : error ? 'Sync fallo' : lastSyncAt ? '☁️ Cloud' : 'Cloud pendiente'}</span>
+            <span>{syncing ? t('app.cloud_indicator.syncing') : error ? t('app.cloud_indicator.error') : lastSyncAt ? t('app.cloud_indicator.cloud') : t('app.cloud_indicator.pending')}</span>
         </div>
     );
 }
@@ -141,6 +143,7 @@ function CloudSyncBridge() {
 function AppContent() {
     const { state, actions, hydrated } = useData();
     const { isCloud, user, mode } = useAuth();
+    const t = useT();
     const [page, setPage] = useState('home');
 
     if (!hydrated || mode === 'loading') {
@@ -153,83 +156,80 @@ function AppContent() {
                     fontFamily: 'var(--font-display)', color: '#0a0a0f', fontSize: 22, fontWeight: 700,
                     boxShadow: '0 4px 14px rgba(99, 241, 203, 0.3)'
                 }}>D</div>
-                <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Cargando tu data...</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{t('app.loading_data')}</div>
             </div>
         );
     }
 
     const showOnboarding = !state.meta.onboarded;
-    const labels = getRubroLabels(state.business.rubro);
+    const labels = getRubroLabelsI18n(state.business.rubro);
     const rubroConfig = getRubroConfig(state.business.rubro);
-    const rubroName = {
-        general: 'General', kiosco: 'Kiosco', restaurante: 'Restaurante',
-        accesorios: 'Accesorios', servicios: 'Servicios', otro: 'Otro'
-    }[state.business.rubro] || 'General';
+    const rubroName = t(`onboarding.rubros.${state.business.rubro}.name`) || 'General';
 
     const allNavGroups = [
         {
-            label: 'Principal',
+            label: t('nav.principal'),
             items: [
-                { id: 'home', icon: Home, label: 'Inicio' },
-                { id: 'informes', icon: BarChart3, label: 'Informes' }
+                { id: 'home', icon: Home, label: t('nav.home') },
+                { id: 'informes', icon: BarChart3, label: t('nav.informes') }
             ]
         },
         {
-            label: 'Negocio',
+            label: t('nav.negocio'),
             items: [
-                { id: 'sucursales', icon: Store, label: 'Sucursales' },
-                { id: 'usuarios', icon: UserCog, label: 'Cuentas' },
-                { id: 'empleados', icon: Users, label: 'Empleados' },
-                { id: 'asistencia', icon: UserCheck, label: 'Asistencia' },
-                { id: 'tareas', icon: CheckSquare, label: 'Tareas' }
+                { id: 'sucursales', icon: Store, label: t('nav.sucursales') },
+                { id: 'usuarios', icon: UserCog, label: t('nav.cuentas') },
+                { id: 'empleados', icon: Users, label: t('nav.empleados') },
+                { id: 'asistencia', icon: UserCheck, label: t('nav.asistencia') },
+                { id: 'tareas', icon: CheckSquare, label: t('nav.tareas') }
             ]
         },
         {
-            label: state.business.rubro === 'restaurante' ? 'Salón' : 'Agenda',
+            label: state.business.rubro === 'restaurante' ? t('nav.salon') : t('nav.agenda'),
             items: [
-                { id: 'mesas', icon: Armchair, label: state.business.rubro === 'restaurante' ? 'Mesas' : 'Espacios' },
-                { id: 'reservas', icon: CalendarClock, label: 'Reservas' }
+                { id: 'mesas', icon: Armchair, label: state.business.rubro === 'restaurante' ? t('nav.mesas') : t('nav.espacios') },
+                { id: 'reservas', icon: CalendarClock, label: t('nav.reservas') }
             ]
         },
         {
-            label: 'Operaciones',
+            label: t('nav.operaciones'),
             items: [
                 { id: 'productos', icon: () => <span style={{ fontSize: 18 }}>{rubroConfig.productEmoji || '📦'}</span>, label: labels.items },
                 { id: 'pos', icon: ShoppingCart, label: labels.pos, highlight: true },
-                { id: 'ventas', icon: Receipt, label: `Historial ${labels.sales.toLowerCase()}` },
+                { id: 'ventas', icon: Receipt, label: `${t('nav.ventas_historial')}` },
                 { id: 'pedidos', icon: ShoppingBag, label: labels.orders },
-                { id: 'caja', icon: PiggyBank, label: 'Caja diaria' },
-                { id: 'transferencias', icon: ArrowRightLeft, label: 'Transferencias' }
+                { id: 'caja', icon: PiggyBank, label: t('nav.caja') },
+                { id: 'transferencias', icon: ArrowRightLeft, label: t('nav.transferencias') }
             ]
         },
         {
-            label: 'Finanzas & Fiscal',
+            label: t('nav.finanzas'),
             items: [
-                { id: 'gastos', icon: DollarSign, label: 'Gastos' },
-                { id: 'banking', icon: Landmark, label: 'Banco' },
-                { id: 'proveedores', icon: Truck, label: 'Proveedores' },
-                { id: 'afip', icon: FileText, label: 'AFIP · Fiscal' }
+                { id: 'gastos', icon: DollarSign, label: t('nav.gastos') },
+                { id: 'banking', icon: Landmark, label: t('nav.banco') },
+                { id: 'proveedores', icon: Truck, label: t('nav.proveedores') },
+                { id: 'afip', icon: FileText, label: t('nav.afip') }
             ]
         },
         {
-            label: 'Clientes & Marketing',
+            label: t('nav.clientes_mkt'),
             items: [
                 { id: 'clientes', icon: Users2, label: labels.clients },
-                { id: 'marketing', icon: Megaphone, label: 'Marketing' },
-                { id: 'agents', icon: Bot, label: 'Agentes AI' },
-                { id: 'instagram', icon: Instagram, label: 'Instagram' },
-                { id: 'tiktok', icon: Music2, label: 'TikTok' },
-                { id: 'analytics', icon: BarChart3, label: 'Analytics' },
-                { id: 'web', icon: Globe, label: 'Tienda online' }
+                { id: 'marketing', icon: Megaphone, label: t('nav.marketing') },
+                { id: 'agents', icon: Bot, label: t('nav.agents') },
+                { id: 'instagram', icon: Instagram, label: t('nav.instagram') },
+                { id: 'tiktok', icon: Music2, label: t('nav.tiktok') },
+                { id: 'analytics', icon: BarChart3, label: t('nav.analytics') },
+                { id: 'web', icon: Globe, label: t('nav.web') }
             ]
         },
         {
-            label: 'Datos & Sistema',
+            label: t('nav.datos_sistema'),
             items: [
-                { id: 'import', icon: Upload, label: 'Importar Excel' },
-                { id: 'backup', icon: Shield, label: 'Backup & Seguridad' },
-                { id: 'account', icon: isCloud ? Cloud : User, label: isCloud ? 'Cuenta · Cloud' : 'Cuenta · Offline', highlight: isCloud },
-                { id: 'settings', icon: SettingsIcon, label: 'Configuración' }
+                { id: 'import', icon: Upload, label: t('nav.import') },
+                { id: 'backup', icon: Shield, label: t('nav.backup') },
+                { id: 'account', icon: isCloud ? Cloud : User, label: isCloud ? t('nav.cuenta_cloud') : t('nav.cuenta_offline'), highlight: isCloud },
+                { id: 'settings', icon: SettingsIcon, label: t('nav.configuracion') }
             ]
         }
     ];
@@ -287,7 +287,7 @@ function AppContent() {
     })();
 
     const handleReconfigure = () => {
-        const ok = confirm('¿Querés volver a la pantalla de configuración inicial?\n\n⚠️ No se pierden datos — solo vas a poder cambiar el nombre, rubro y sucursales de tu negocio.');
+        const ok = confirm(t('app.reconfigure_confirm'));
         if (ok) actions.resetOnboarding();
     };
 
@@ -299,7 +299,7 @@ function AppContent() {
                     <div className="sidebar-brand-logo">D</div>
                     <div className="sidebar-brand-text">
                         <h1>Dashboard</h1>
-                        <div className="sidebar-brand-tagline">Business OS</div>
+                        <div className="sidebar-brand-tagline">{t('app.brand_tagline')}</div>
                     </div>
                 </div>
                 <nav className="sidebar-nav">
@@ -324,7 +324,7 @@ function AppContent() {
                     ))}
                 </nav>
                 <div className="sidebar-footer">
-                    <div className="sidebar-footer-business">{state.business.name || 'Mi negocio'}</div>
+                    <div className="sidebar-footer-business">{state.business.name || t('app.my_business')}</div>
                     <div className="sidebar-rubro-badge">
                         <span>{RUBRO_EMOJI[state.business.rubro] || '🏬'}</span>
                         <span>{rubroName}</span>
@@ -335,7 +335,7 @@ function AppContent() {
                                 {user.photoURL && <img src={user.photoURL} alt="" style={{ width: 22, height: 22, borderRadius: '50%' }} />}
                                 <div style={{ flex: 1, overflow: 'hidden' }}>
                                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>{user.displayName || user.email}</div>
-                                    <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Sync con Drive ●</div>
+                                    <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Drive ●</div>
                                 </div>
                             </div>
                         </div>
@@ -343,10 +343,10 @@ function AppContent() {
                     <button
                         className="sidebar-reconfigure"
                         onClick={handleReconfigure}
-                        title="Cambiar nombre, rubro o crear sucursales"
+                        title={t('app.reconfigure')}
                     >
                         <RotateCcw size={11} style={{ display: 'inline', marginRight: 6, verticalAlign: -1 }} />
-                        Reconfigurar negocio
+                        {t('app.reconfigure')}
                     </button>
                 </div>
             </aside>
@@ -366,7 +366,7 @@ function AppContent() {
                                     value={state.meta.currentSucursalId || 'all'}
                                     onChange={e => actions.setCurrentSucursal(e.target.value === 'all' ? null : e.target.value)}
                                 >
-                                    <option value="all">Todas las sucursales</option>
+                                    <option value="all">{t('app.all_branches')}</option>
                                     {state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
                                 </select>
                             </div>

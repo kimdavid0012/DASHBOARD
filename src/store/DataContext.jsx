@@ -43,6 +43,7 @@ const DEFAULT_STATE = {
     afipVencimientos: [],  // Fechas importantes (IVA, IIBB, Ganancias)
     integraciones: {
         openaiKey: '', anthropicKey: '',
+        elevenLabsKey: '',
         metaAccessToken: '', metaPixelId: '',
         googleAnalyticsId: '', instagramBusinessId: '',
         wooConsumerKey: '', wooConsumerSecret: '', wooStoreUrl: '',
