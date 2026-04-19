@@ -1,0 +1,52 @@
+rules_version = '2';
+
+// Dashboard SaaS - Firestore Security Rules
+//
+// Modelo: solo guardamos metadata mínima del usuario.
+// La data del negocio está en Google Drive del usuario, NO en Firestore.
+//
+// Colecciones:
+//   users/{uid}           - metadata del usuario (email, plan, driveFolder)
+//   agent_outputs/{uid}/  - outputs de agentes corridos por Cloud Functions (próximo)
+//   agent_schedules/{uid} - configuración de agentes 24/7 por usuario (próximo)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────────
+    // users/{uid} - cada user lee/escribe solo su propio doc
+    // ─────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId
+                         // No permitir cambios maliciosos al plan desde el client
+                         && (!('plan' in request.resource.data.diff(resource.data).affectedKeys())
+                             || request.resource.data.plan == resource.data.plan);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // agent_outputs - outputs de agentes AI (Fase A sesión 2)
+    // Read: usuario ve los suyos
+    // Write: solo backend (Cloud Functions)
+    // ─────────────────────────────────────────────────────────
+    match /agent_outputs/{userId}/{document=**} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // agent_schedules - config de agentes 24/7
+    // Usuario puede setear su propio schedule
+    // ─────────────────────────────────────────────────────────
+    match /agent_schedules/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Deny everything else
+    // ─────────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

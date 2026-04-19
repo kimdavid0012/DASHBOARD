@@ -1,83 +1,79 @@
-# Dashboard
+# Dashboard SaaS
 
-Sistema de gestión multi-rubro + multi-sucursal para kioscos, restaurantes, casas de accesorios y cualquier otro tipo de negocio.
+Sistema de gestión todo-en-uno con IA para kioscos, restaurantes, retail y servicios.
 
-## Features
+Multi-rubro, multi-sucursal, offline-first, con facturación AFIP, importación de Excel con IA, y agentes AI 24/7.
 
-- ✅ **Sin login** — acceso directo, ideal para probar y demostrar
-- ✅ **Multi-rubro** — kiosco, restaurante, accesorios, servicios, general
-- ✅ **Multi-sucursal** — selector global de sucursal que filtra toda la app
-- ✅ **Multi-cuenta** — gestión de usuarios con cargo, rol y sucursal asignada
-- ✅ **Onboarding** guiado en 2 pasos (primer uso)
-- ✅ **Empty states guiados** en TODAS las secciones (explica qué vería con datos)
-- ✅ **Charts nativos SVG** (sin dependencias pesadas)
-- ✅ **Backup / Restore** en JSON
+**Demo:** https://graceful-gingersnap-7c7cf8.netlify.app
 
-## Secciones
+## 🚀 Modo de trabajo
 
-### Principal
-- **Inicio** — KPIs del día/mes + charts por sucursal
-- **Informes** — Tabs: General / Por Sucursal / Por Empleado / Financiero. Filtros 7d/30d/90d/año/todo
+La app tiene **2 modos**:
 
-### Negocio
-- **Sucursales** — CRUD completo
-- **Cuentas** — Usuarios del sistema con rol + sucursal asignada
-- **Empleados** — Asignados por sucursal, con sueldo y comisión
-- **Asistencia** — Registro diario por empleado
-- **Tareas** — Kanban pendiente/en progreso/completado
+### 🔒 Modo Offline (default, free)
+- 100% local — nada sale de tu dispositivo
+- IndexedDB + localStorage + pendrive/carpeta externa
+- CELA bot + 8 agentes AI (con tu API key)
+- Sin costos por usuario
+- **No requiere login**
 
-### Operaciones
-- **Productos** — Catálogo con stock mínimo y alertas
-- **Ventas** — POS completo con carrito, método de pago, descuento, descuenta stock
-- **Pedidos online** — Web/WhatsApp/Instagram/PedidosYa/Rappi
-- **Caja diaria** — Cierre Z por sucursal y fecha
-- **Transferencias** — Entre sucursales
+### ☁️ Modo Cloud (premium)
+- Login con Google (1 click)
+- Data en TU Google Drive (carpeta `/Dashboard-Data/`)
+- Sync automático cada 5 min entre dispositivos
+- Agentes AI corriendo 24/7 en la nube
+- 30 snapshots versionados
+- **Costo para el operador: <$0.01 USD por user activo/mes**
 
-### Finanzas
-- **Gastos** — Categorizados y por sucursal
-- **Banco** — Movimientos bancarios
-- **Proveedores** — CRUD + deudas + charts
+## ⚙️ Setup
 
-### Clientes & Marketing (UI lista, requiere API keys)
-- **Clientes** — CRM básico con histórico de compras
-- **Marketing** — Meta Ads, WhatsApp, Email
-- **Agentes AI** — 8 agentes (Analyst, Content, Trends, Strategist, Copywriter, CX, Finance, Inventory)
-- **Instagram** — Planner de contenido
-- **TikTok** — Analytics
-- **Google Analytics** — GA4
-- **Tienda online** — WooCommerce / Shopify
-
-### Sistema
-- **Configuración** — Business + integraciones + backup
-
-## Stack
-
-- React 18 + Vite 6
-- lucide-react (iconos)
-- nanoid (IDs)
-- localStorage (persistencia)
-- Charts SVG nativos (sin recharts / d3 / chart.js)
-
-## Setup
+### Automatizado
 
 ```bash
-npm install
-npm run dev
+cd dashboard
+./setup.sh
 ```
 
-Para deploy a Netlify: auto-deploy desde `main`.
+El script instala firebase-tools, login, crea proyecto, deploya reglas Firestore, y genera `.env.local` con tus credenciales.
 
-## Datos
+### Manual
 
-Todo se guarda en `localStorage` bajo la key `dashboard_state_v1`. Para Firebase sync, configurar `.env`:
+Ver `SETUP_MANUAL.md` para los pasos completos de Firebase Console + Netlify.
 
-```
-VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_AUTH_DOMAIN=...
-VITE_FIREBASE_PROJECT_ID=...
-VITE_FIREBASE_STORAGE_BUCKET=...
-VITE_FIREBASE_MESSAGING_SENDER_ID=...
-VITE_FIREBASE_APP_ID=...
-```
+## 🏗️ Arquitectura
 
-(Firebase no viene integrado aún — es para futuras versiones.)
+- **Frontend**: Vite + React + custom CSS design system
+- **Storage primario**: IndexedDB (via idb-keyval)
+- **Cloud storage**: Google Drive del usuario (scope `drive.file`)
+- **Auth**: Firebase Auth (Google provider)
+- **Metadata**: Firestore (solo user metadata, no data del negocio)
+- **Scheduled jobs**: Cloud Functions v2 + Cloud Scheduler
+- **AI**: Claude Sonnet 4.5 + GPT-4o-mini fallback
+
+**Nota clave:** Firestore SOLO guarda metadata. La data real del negocio vive en el Drive del usuario → costos casi nulos para escalar.
+
+## 💰 Costos
+
+Por usuario activo al mes:
+- Firestore writes: ~$0.00003
+- Cloud Functions: ~$0.00024
+- **Total: <$0.01 USD/mes**
+
+1000 usuarios activos = ~$10 USD/mes total.
+
+## 🔒 Seguridad
+
+- Scope Drive: `drive.file` (app-owned folder, sin Google Review)
+- Firestore rules: cada user solo ve su propio doc
+- Secrets (API keys) en Firebase Secrets, nunca en código
+- OAuth tokens en sessionStorage, expiran en 1h
+
+## 🛣️ Roadmap
+
+- [x] v1-v3: Base multi-rubro + POS + CELA bot + agentes
+- [x] v3.1: AFIP + Excel import + backup engine + PWA
+- [x] v4.0: Firebase Auth + Drive sync
+- [x] v4.1: Cloud Functions agentes 24/7
+- [ ] v4.2: Conflict resolution UI + offline queue
+- [ ] v5: Ticket printing 58mm + KDS + variantes stock
+- [ ] v6: AFIP WSFE real (CAE validado)

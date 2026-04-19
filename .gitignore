@@ -6,3 +6,11 @@ dist-ssr
 .env.local
 .DS_Store
 .vite
+
+# Firebase
+functions/node_modules
+functions/lib
+.firebase
+firebase-debug.log
+firebase-debug.*.log
+.firebaserc
