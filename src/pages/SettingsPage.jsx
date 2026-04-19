@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings as SettingsIcon, Download, Upload, Trash2, AlertTriangle, Check, Globe, Mic, Printer, Bluetooth, Usb } from 'lucide-react';
+import { Settings as SettingsIcon, Download, Upload, Trash2, AlertTriangle, Check, Globe, Mic, Printer, Bluetooth, Usb, Bell } from 'lucide-react';
 import { useData, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, Field, InfoBox } from '../components/UI';
 import { useT, getLang, setLang, availableLangs } from '../i18n';
@@ -163,6 +163,9 @@ export default function SettingsPage() {
 
                 {/* ═══════════ IMPRESORA DE TICKETS 🖨️ ═══════════ */}
                 <PrinterCard t={t} currentLang={currentLang} />
+
+                {/* ═══════════ NOTIFICACIONES 🔔 ═══════════ */}
+                <NotificationsCard currentLang={currentLang} />
 
                 {/* DATOS DEL NEGOCIO */}
                 <Card title={t('settings.business_data')} subtitle={currentLang === 'ko' ? '기본 정보 및 업종' : currentLang === 'en' ? 'Basic info and industry' : 'Información básica y rubro'}>
@@ -448,6 +451,132 @@ function PrinterCard({ t, currentLang }) {
                     </div>
                 )}
             </div>
+        </Card>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// NOTIFICATIONS CARD
+// ═══════════════════════════════════════════════════════════════════
+function NotificationsCard({ currentLang }) {
+    const [permission, setPermission] = useState('default');
+    const [asking, setAsking] = useState(false);
+    const [msg, setMsg] = useState('');
+    const [installed, setInstalled] = useState(false);
+
+    const label = (es, en, ko) => currentLang === 'ko' ? ko : currentLang === 'en' ? en : es;
+
+    React.useEffect(() => {
+        import('../utils/notifications').then(mod => {
+            setPermission(mod.getPermissionState());
+            setInstalled(mod.isInstalledAsPWA());
+        });
+    }, []);
+
+    const ask = async () => {
+        setAsking(true); setMsg('');
+        const { requestPermission, registerBackgroundSync, registerPeriodicSync, showLocalNotification } = await import('../utils/notifications');
+        const r = await requestPermission();
+        setPermission(Notification.permission);
+        if (r.ok) {
+            await registerBackgroundSync();
+            await registerPeriodicSync(6);
+            showLocalNotification({
+                title: '🎉 ' + label('Notificaciones activadas', 'Notifications enabled', '알림 활성화됨'),
+                body: label('Te avisaremos de comandas nuevas y alertas importantes', 'We will notify you of new orders and important alerts', '새 주문 및 중요한 알림을 알려드립니다'),
+                tag: 'welcome'
+            });
+            setMsg(label('✓ Listas para usar', '✓ Ready to go', '✓ 사용 준비 완료'));
+        } else {
+            setMsg('⚠️ ' + r.reason);
+        }
+        setAsking(false);
+    };
+
+    const test = async () => {
+        const { showLocalNotification } = await import('../utils/notifications');
+        await showLocalNotification({
+            title: '🧪 ' + label('Notificación de prueba', 'Test notification', '테스트 알림'),
+            body: label('Si ves esto, todo funciona bien', 'If you see this, everything works', '이것을 볼 수 있다면 모든 것이 잘 작동합니다'),
+            tag: 'test'
+        });
+    };
+
+    const status = {
+        granted: { color: '#22c55e', text: label('✓ Activadas', '✓ Enabled', '✓ 활성화됨') },
+        denied: { color: '#ef4444', text: label('✗ Bloqueadas', '✗ Blocked', '✗ 차단됨') },
+        default: { color: '#f59e0b', text: label('Pendiente', 'Pending', '대기 중') },
+        unsupported: { color: '#64748b', text: label('No disponible', 'Unsupported', '지원되지 않음') }
+    }[permission];
+
+    return (
+        <Card>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <Bell size={20} style={{ color: 'var(--accent)' }} />
+                <div>
+                    <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500 }}>
+                        🔔 {label('Notificaciones', 'Notifications', '알림')}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        {label(
+                            'Avisos de comandas nuevas, stock crítico y vencimientos AFIP',
+                            'Alerts for new orders, low stock and AFIP due dates',
+                            '새 주문, 재고 부족 및 AFIP 기한 알림'
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            <div style={{
+                padding: 12,
+                background: 'var(--bg-elevated)',
+                border: `1px solid ${status.color}33`,
+                borderRadius: 10,
+                marginBottom: 12,
+                fontSize: 13,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 8
+            }}>
+                <div>
+                    <strong>{label('Estado', 'Status', '상태')}:</strong> <span style={{ color: status.color }}>{status.text}</span>
+                    {installed && (
+                        <span style={{ marginLeft: 10, color: 'var(--accent)', fontSize: 11 }}>
+                            · 📱 {label('Instalada como PWA', 'Installed as PWA', 'PWA로 설치됨')}
+                        </span>
+                    )}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    {permission !== 'granted' && permission !== 'unsupported' && (
+                        <button className="btn btn-primary btn-sm" onClick={ask} disabled={asking}>
+                            {asking ? '...' : label('Activar', 'Enable', '활성화')}
+                        </button>
+                    )}
+                    {permission === 'granted' && (
+                        <button className="btn btn-ghost btn-sm" onClick={test}>
+                            🧪 {label('Test', 'Test', '테스트')}
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {msg && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                    {msg}
+                </div>
+            )}
+
+            {!installed && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: 10, background: 'rgba(99,241,203,0.05)', borderRadius: 8 }}>
+                    💡 {label(
+                        'Tip: instalá Dashboard como app en tu celular (Chrome: ⋮ → "Instalar app") para que las notificaciones funcionen aún con la app cerrada.',
+                        'Tip: install Dashboard as an app (Chrome: ⋮ → "Install app") so notifications work even when closed.',
+                        '팁: Dashboard 를 앱으로 설치하면 (Chrome: ⋮ → "앱 설치") 닫혀 있어도 알림이 작동합니다.'
+                    )}
+                </div>
+            )}
         </Card>
     );
 }

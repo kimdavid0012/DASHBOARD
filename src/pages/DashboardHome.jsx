@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
 import {
     TrendingUp, DollarSign, ShoppingCart, Users, Package,
-    AlertTriangle, Store, Home, Calendar, RotateCcw, Settings as SettingsIcon
+    AlertTriangle, Store, Home, Calendar, RotateCcw, Settings as SettingsIcon,
+    Bot, FileText, Receipt, ArrowRight, Flame, Clock, Armchair,
+    Megaphone, Zap, Plus
 } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, KpiCard, EmptyState, BarChart, LineChart, fmtMoney, CHART_COLORS, InfoBox } from '../components/UI';
@@ -67,6 +69,52 @@ export default function DashboardHome({ onNavigate }) {
             .slice(0, 5)
             .map((d, i) => ({ ...d, color: CHART_COLORS[i % CHART_COLORS.length] }));
     }, [ventas, productos]);
+
+    // Últimas 5 ventas
+    const ultimasVentas = useMemo(() => {
+        return [...ventas]
+            .sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0))
+            .slice(0, 5);
+    }, [ventas]);
+
+    // Productos con stock crítico (sin stock + stock bajo)
+    const productosCriticos = useMemo(() => {
+        return productos
+            .filter(p => {
+                const stock = Number(p.stock || 0);
+                const min = Number(p.stockMinimo || 5);
+                return stock <= min;
+            })
+            .sort((a, b) => Number(a.stock || 0) - Number(b.stock || 0))
+            .slice(0, 5);
+    }, [productos]);
+
+    // Comandas activas en cocina (si rubro resto)
+    const comandasActivas = useMemo(() => {
+        if (state.business.rubro !== 'restaurante') return [];
+        const cutoff = Date.now() - 8 * 60 * 60 * 1000;
+        return (state.ventas || [])
+            .filter(v => v.mesaId && v.kdsEstado !== 'entregada' && new Date(v.fecha).getTime() > cutoff)
+            .slice(0, 4);
+    }, [state.ventas, state.business.rubro]);
+
+    // Vencimientos próximos (AFIP)
+    const vencimientosUrgentes = useMemo(() => {
+        const hoy = Date.now();
+        const en7dias = hoy + 7 * 24 * 60 * 60 * 1000;
+        return (state.vencimientos || [])
+            .filter(v => !v.pagado && new Date(v.fecha).getTime() <= en7dias)
+            .sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
+            .slice(0, 3);
+    }, [state.vencimientos]);
+
+    // Empleados trabajando hoy (si hay asistencia)
+    const empleadosActivos = useMemo(() => {
+        const hoy = new Date().toISOString().slice(0, 10);
+        return (state.asistencia || [])
+            .filter(a => a.fecha === hoy && !a.salida)
+            .length;
+    }, [state.asistencia]);
 
     const hasAnyData = ventas.length > 0 || productos.length > 0 || clientes.length > 0;
 
@@ -151,6 +199,212 @@ export default function DashboardHome({ onNavigate }) {
                 />
             </div>
 
+            {/* QUICK ACTIONS MOSAIC */}
+            {onNavigate && (
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                    gap: 10,
+                    marginBottom: 20
+                }}>
+                    <QuickAction icon={Zap} label="Ir al POS" accent="#63f1cb" onClick={() => onNavigate('pos')} />
+                    <QuickAction icon={Plus} label={`Nuevo ${labels.item.toLowerCase()}`} accent="#60a5fa" onClick={() => onNavigate('productos')} />
+                    {state.business.rubro === 'restaurante' && (
+                        <QuickAction icon={Flame} label="Cocina KDS" accent="#f59e0b"
+                            badge={comandasActivas.length || null}
+                            onClick={() => onNavigate('kds')} />
+                    )}
+                    <QuickAction icon={FileText} label="Nueva factura" accent="#a78bfa" onClick={() => onNavigate('afip')} />
+                    <QuickAction icon={Bot} label="CELA bot" accent="#ec4899" onClick={() => { /* toggle bot */ window.dispatchEvent(new CustomEvent('cela-bot-toggle')); }} />
+                    <QuickAction icon={TrendingUp} label="Ver informes" accent="#22c55e" onClick={() => onNavigate('informes')} />
+                </div>
+            )}
+
+            {/* SMART WIDGETS — solo muestra los que tengan data */}
+            {(productosCriticos.length > 0 || comandasActivas.length > 0 || vencimientosUrgentes.length > 0 || ultimasVentas.length > 0) && (
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                    gap: 16,
+                    marginBottom: 20
+                }}>
+                    {/* Alertas de stock */}
+                    {productosCriticos.length > 0 && (
+                        <Card>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <AlertTriangle size={18} style={{ color: '#ef4444' }} />
+                                    <strong style={{ fontSize: 14 }}>Stock crítico</strong>
+                                </div>
+                                {onNavigate && (
+                                    <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('productos')}>
+                                        Ver todos <ArrowRight size={12} />
+                                    </button>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {productosCriticos.map(p => {
+                                    const stock = Number(p.stock || 0);
+                                    const sinStock = stock === 0;
+                                    return (
+                                        <div key={p.id} style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            padding: '8px 10px',
+                                            background: sinStock ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)',
+                                            border: `1px solid ${sinStock ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                                            borderRadius: 8,
+                                            fontSize: 13
+                                        }}>
+                                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {p.nombre}
+                                            </span>
+                                            <span style={{
+                                                fontSize: 11, fontWeight: 700,
+                                                color: sinStock ? '#ef4444' : '#f59e0b',
+                                                marginLeft: 8,
+                                                whiteSpace: 'nowrap'
+                                            }}>
+                                                {sinStock ? '⚠️ SIN STOCK' : `${stock} ud`}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </Card>
+                    )}
+
+                    {/* Comandas activas (resto) */}
+                    {comandasActivas.length > 0 && (
+                        <Card>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <Flame size={18} style={{ color: '#f59e0b' }} />
+                                    <strong style={{ fontSize: 14 }}>Cocina en vivo</strong>
+                                </div>
+                                {onNavigate && (
+                                    <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('kds')}>
+                                        Ir al KDS <ArrowRight size={12} />
+                                    </button>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {comandasActivas.map(c => {
+                                    const mesa = state.mesas?.find(m => m.id === c.mesaId);
+                                    const ageMin = Math.floor((Date.now() - new Date(c.fecha).getTime()) / 60000);
+                                    const urgent = ageMin > 15;
+                                    const estado = c.kdsEstado || 'nueva';
+                                    const estadoLabel = estado === 'nueva' ? '📋' : estado === 'preparando' ? '🍳' : '✅';
+                                    return (
+                                        <div key={c.id} style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            padding: '8px 10px',
+                                            background: urgent ? 'rgba(239,68,68,0.08)' : 'var(--bg-elevated)',
+                                            border: `1px solid ${urgent ? 'rgba(239,68,68,0.3)' : 'var(--border-color)'}`,
+                                            borderRadius: 8,
+                                            fontSize: 13
+                                        }}>
+                                            <span>{estadoLabel} Mesa {mesa?.numero || '?'} · {(c.items || []).length} items</span>
+                                            <span style={{
+                                                fontSize: 11, fontWeight: 600,
+                                                color: urgent ? '#ef4444' : 'var(--text-muted)'
+                                            }}>
+                                                {ageMin}min {urgent && '🔥'}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </Card>
+                    )}
+
+                    {/* Últimas ventas */}
+                    {ultimasVentas.length > 0 && (
+                        <Card>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <Receipt size={18} style={{ color: 'var(--accent)' }} />
+                                    <strong style={{ fontSize: 14 }}>Últimas ventas</strong>
+                                </div>
+                                {onNavigate && (
+                                    <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('ventas')}>
+                                        Ver todas <ArrowRight size={12} />
+                                    </button>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {ultimasVentas.map(v => {
+                                    const f = new Date(v.fecha || 0);
+                                    const hoy = new Date();
+                                    const esHoy = f.toDateString() === hoy.toDateString();
+                                    const tiempo = esHoy ? f.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : f.toLocaleDateString('es-AR');
+                                    return (
+                                        <div key={v.id} style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            padding: '8px 10px',
+                                            background: 'var(--bg-elevated)',
+                                            borderRadius: 8,
+                                            fontSize: 13
+                                        }}>
+                                            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                                                {tiempo} · {(v.items || []).length} items
+                                            </span>
+                                            <span style={{ fontWeight: 600, color: 'var(--accent)' }}>
+                                                {fmtMoney(v.total || 0, state.business.moneda)}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </Card>
+                    )}
+
+                    {/* Vencimientos AFIP */}
+                    {vencimientosUrgentes.length > 0 && (
+                        <Card>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <Calendar size={18} style={{ color: '#a855f7' }} />
+                                    <strong style={{ fontSize: 14 }}>Próximos vencimientos</strong>
+                                </div>
+                                {onNavigate && (
+                                    <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('afip')}>
+                                        Ver AFIP <ArrowRight size={12} />
+                                    </button>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {vencimientosUrgentes.map(v => {
+                                    const dias = Math.ceil((new Date(v.fecha).getTime() - Date.now()) / 86400000);
+                                    const urgent = dias <= 2;
+                                    return (
+                                        <div key={v.id} style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            padding: '8px 10px',
+                                            background: urgent ? 'rgba(239,68,68,0.08)' : 'var(--bg-elevated)',
+                                            border: `1px solid ${urgent ? 'rgba(239,68,68,0.3)' : 'var(--border-color)'}`,
+                                            borderRadius: 8,
+                                            fontSize: 13
+                                        }}>
+                                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {v.nombre || 'Vencimiento'}
+                                            </span>
+                                            <span style={{
+                                                fontSize: 11, fontWeight: 700,
+                                                color: urgent ? '#ef4444' : 'var(--text-muted)',
+                                                marginLeft: 8,
+                                                whiteSpace: 'nowrap'
+                                            }}>
+                                                {dias === 0 ? 'HOY' : dias < 0 ? 'VENCIDO' : `${dias}d`}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </Card>
+                    )}
+                </div>
+            )}
+
             {!hasAnyData ? (
                 <Card>
                     <InfoBox>
@@ -195,5 +449,72 @@ export default function DashboardHome({ onNavigate }) {
                 </div>
             )}
         </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// QuickAction — mosaic tile con icono, label, accent y badge opcional
+// ═══════════════════════════════════════════════════════════════════
+function QuickAction({ icon: Icon, label, accent, onClick, badge }) {
+    return (
+        <button
+            onClick={onClick}
+            style={{
+                position: 'relative',
+                padding: 14,
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 12,
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 8,
+                transition: 'all 0.15s var(--ease)',
+                minHeight: 88,
+                color: 'var(--text-primary)',
+                WebkitTapHighlightColor: 'transparent'
+            }}
+            onMouseOver={e => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.borderColor = accent || 'var(--accent)';
+                e.currentTarget.style.boxShadow = `0 6px 20px rgba(0,0,0,0.15)`;
+            }}
+            onMouseOut={e => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.borderColor = 'var(--border-color)';
+                e.currentTarget.style.boxShadow = 'none';
+            }}
+        >
+            <div style={{
+                width: 40, height: 40,
+                borderRadius: 10,
+                background: accent ? `${accent}22` : 'var(--bg-elevated)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: accent || 'var(--accent)'
+            }}>
+                <Icon size={20} />
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 600, textAlign: 'center', lineHeight: 1.3 }}>
+                {label}
+            </div>
+            {badge !== null && badge !== undefined && (
+                <div style={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    background: accent || 'var(--accent)',
+                    color: '#0a0a0f',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: '2px 7px',
+                    borderRadius: 20,
+                    minWidth: 18,
+                    textAlign: 'center'
+                }}>
+                    {badge}
+                </div>
+            )}
+        </button>
     );
 }

@@ -418,6 +418,19 @@ export function KDSPage() {
             // 2 beeps rápidos
             playBeep(880, 150);
             setTimeout(() => playBeep(1100, 200), 180);
+
+            // Notificación local si no estamos en la tab activa
+            if (document.visibilityState !== 'visible') {
+                import('../utils/notifications').then(({ showLocalNotification }) => {
+                    const mesa = state.mesas?.find(m => m.id === fresh[0] && nuevas.find(n => n.id === fresh[0])?.mesaId);
+                    showLocalNotification({
+                        title: '🍳 Nueva comanda',
+                        body: `${fresh.length} comanda${fresh.length > 1 ? 's' : ''} nueva${fresh.length > 1 ? 's' : ''} en cocina`,
+                        tag: 'kds-new',
+                        url: '/'
+                    });
+                });
+            }
         }
         setLastComandaIds(newIds);
     }, [nuevas.length]);
