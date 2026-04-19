@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { UserCog, Plus, Pencil, Trash2, Shield } from 'lucide-react';
 import { useData, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, Modal, Field, EmptyState, Badge, InfoBox } from '../components/UI';
+import { useT } from '../i18n';
 
 const ROLES = [
     { id: 'admin', nombre: 'Admin', color: 'danger', desc: 'Acceso total al sistema' },
@@ -14,6 +15,7 @@ const ROLES = [
 const EMPTY = { nombre: '', email: '', rol: 'vendedor', sucursalId: '', activo: true, notas: '' };
 
 export default function UsuariosPage() {
+    const t = useT();
     const { state, actions } = useData();
     const [open, setOpen] = useState(false);
     const [editId, setEditId] = useState(null);
@@ -30,9 +32,7 @@ export default function UsuariosPage() {
     return (
         <div>
             <PageHeader
-                icon={UserCog}
-                title="Cuentas del sistema"
-                subtitle="Usuarios que acceden al Dashboard"
+                icon={UserCog} title={t('pages.usuarios.title')} subtitle={t('pages.usuarios.subtitle')}
                 help={SECTION_HELP.usuarios}
                 actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setEditId(null); setOpen(true); }}><Plus size={14} /> Nueva cuenta</button>}
             />

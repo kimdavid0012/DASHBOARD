@@ -1,18 +1,26 @@
 import React, { useState } from 'react';
-import { ArrowRight, Store, Sparkles, RefreshCw } from 'lucide-react';
+import { ArrowRight, Store, Sparkles, RefreshCw, Globe } from 'lucide-react';
 import { useData } from '../store/DataContext';
+import { useT, getLang, setLang, availableLangs } from '../i18n';
 
-const RUBROS = [
-    { id: 'kiosco', nombre: 'Kiosco / Autoservicio', emoji: '🏪', desc: 'Códigos de barras, rotación alta, caja registradora' },
-    { id: 'restaurante', nombre: 'Restaurante / Bar', emoji: '🍽️', desc: 'Mesas, reservas, comandas, menú' },
-    { id: 'accesorios', nombre: 'Ropa / Accesorios', emoji: '👗', desc: 'Talles, colores, variantes' },
-    { id: 'servicios', nombre: 'Servicios profesionales', emoji: '💼', desc: 'Turnos, reservas, facturación de servicios' },
-    { id: 'general', nombre: 'Comercio general', emoji: '🛍️', desc: 'Cualquier tipo de negocio' },
-    { id: 'otro', nombre: 'Otro', emoji: '📋', desc: 'Configuración mínima' }
-];
+const RUBRO_IDS = ['kiosco', 'restaurante', 'accesorios', 'servicios', 'general', 'otro'];
+const RUBRO_EMOJIS = {
+    kiosco: '🏪', restaurante: '🍽️', accesorios: '👗',
+    servicios: '💼', general: '🛍️', otro: '📋'
+};
 
 export default function OnboardingModal() {
     const { state, actions } = useData();
+    const t = useT();
+    const currentLang = getLang();
+
+    // Build RUBROS from i18n
+    const RUBROS = RUBRO_IDS.map(id => ({
+        id,
+        emoji: RUBRO_EMOJIS[id],
+        nombre: t(`onboarding.rubros.${id}.name`),
+        desc: t(`onboarding.rubros.${id}.desc`)
+    }));
 
     // Detect reconfiguration mode: user already has data from a previous setup
     const isReconfiguring = !!(state.business.name || state.sucursales.length > 0);
@@ -69,14 +77,41 @@ export default function OnboardingModal() {
                     </div>
                     <div style={{ flex: 1 }}>
                         <h2 className="modal-title" style={{ margin: 0 }}>
-                            {isReconfiguring ? 'Reconfigurar negocio' : '¡Bienvenido a Dashboard!'}
+                            {isReconfiguring ? t('onboarding.reconfigure_title') : t('onboarding.welcome')}
                         </h2>
                         <div className="text-xs text-muted" style={{ marginTop: 2 }}>
                             {isReconfiguring
-                                ? 'Tus datos se mantienen intactos · solo actualizás nombre/rubro'
-                                : `Configuremos tu negocio en ${skipStep2 ? '1 paso' : '2 pasos'} rápidos · Paso ${step} de ${skipStep2 ? 1 : 2}`}
+                                ? t('onboarding.reconfigure_desc')
+                                : t('onboarding.quick_setup', { steps: skipStep2 ? t('onboarding.step_1') : '2 steps' }) +
+                                ' · ' + t('onboarding.step_of', { current: step, total: skipStep2 ? 1 : 2 })}
                         </div>
                     </div>
+
+                    {/* Language selector — always visible at top of onboarding */}
+                    {!isReconfiguring && (
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center', background: 'var(--bg-elevated)', borderRadius: 10, padding: 4, border: '1px solid var(--border-color)' }}>
+                            <Globe size={14} style={{ color: 'var(--text-muted)', marginLeft: 6 }} />
+                            {availableLangs().map(lang => (
+                                <button
+                                    key={lang.code}
+                                    onClick={() => setLang(lang.code)}
+                                    title={lang.native}
+                                    style={{
+                                        padding: '4px 8px',
+                                        borderRadius: 6,
+                                        border: 'none',
+                                        background: currentLang === lang.code ? 'var(--accent-soft)' : 'transparent',
+                                        color: currentLang === lang.code ? 'var(--accent)' : 'var(--text-secondary)',
+                                        cursor: 'pointer',
+                                        fontSize: 16,
+                                        fontWeight: currentLang === lang.code ? 700 : 400
+                                    }}
+                                >
+                                    {lang.flag}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {isReconfiguring && (
@@ -89,27 +124,26 @@ export default function OnboardingModal() {
                         fontSize: 13,
                         lineHeight: 1.5
                     }}>
-                        💡 <strong>Modo reconfiguración:</strong> tus ventas, productos, empleados y clientes <strong>no se tocan</strong>.
-                        Solo podés cambiar el nombre, rubro y moneda. Si querés crear más sucursales, andá directamente a la sección de Sucursales.
+                        {t('onboarding.reconfigure_notice')}
                     </div>
                 )}
 
                 {step === 1 && (
                     <div>
                         <div className="mb-4">
-                            <label className="field-label">¿Cómo se llama tu negocio? *</label>
+                            <label className="field-label">{t('onboarding.business_name_q')} *</label>
                             <input
                                 className="input"
                                 autoFocus
-                                placeholder="Ej: Kiosco Don Juan, Restaurante La Parrilla..."
+                                placeholder={t('onboarding.business_name_placeholder')}
                                 value={business.name}
                                 onChange={e => setBusiness({ ...business, name: e.target.value })}
                             />
                         </div>
 
                         <div className="mb-3">
-                            <label className="field-label mb-2">¿Qué tipo de negocio tenés? *</label>
-                            <div className="text-xs text-muted mb-3">Esto adapta el sistema: labels, secciones y ejemplos se configuran automáticamente.</div>
+                            <label className="field-label mb-2">{t('onboarding.business_type_q')} *</label>
+                            <div className="text-xs text-muted mb-3">{t('onboarding.business_type_hint')}</div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
                                 {RUBROS.map(r => (
                                     <button
@@ -136,17 +170,18 @@ export default function OnboardingModal() {
 
                         <div className="form-grid mt-4">
                             <div>
-                                <label className="field-label">Moneda</label>
+                                <label className="field-label">{t('onboarding.currency')}</label>
                                 <select className="select" value={business.moneda} onChange={e => setBusiness({ ...business, moneda: e.target.value })}>
                                     <option value="ARS">ARS (Peso argentino)</option>
                                     <option value="USD">USD (Dólar)</option>
                                     <option value="UYU">UYU (Peso uruguayo)</option>
                                     <option value="CLP">CLP (Peso chileno)</option>
                                     <option value="MXN">MXN (Peso mexicano)</option>
+                                    <option value="KRW">KRW (원)</option>
                                 </select>
                             </div>
                             <div>
-                                <label className="field-label">País</label>
+                                <label className="field-label">{t('onboarding.country')}</label>
                                 <input className="input" value={business.pais} onChange={e => setBusiness({ ...business, pais: e.target.value })} />
                             </div>
                         </div>
@@ -154,11 +189,11 @@ export default function OnboardingModal() {
                         <div className="flex justify-end mt-4">
                             {skipStep2 ? (
                                 <button className="btn btn-primary btn-lg" disabled={!canStep1} onClick={finishReconfigureOnly}>
-                                    Guardar cambios <ArrowRight size={14} />
+                                    {t('onboarding.save_changes')} <ArrowRight size={14} />
                                 </button>
                             ) : (
                                 <button className="btn btn-primary btn-lg" disabled={!canStep1} onClick={() => setStep(2)}>
-                                    Continuar <ArrowRight size={14} />
+                                    {t('common.continue')} <ArrowRight size={14} />
                                 </button>
                             )}
                         </div>
@@ -169,19 +204,19 @@ export default function OnboardingModal() {
                     <div>
                         <div className="flex items-center gap-2 mb-3">
                             <Store size={18} style={{ color: 'var(--accent)' }} />
-                            <div className="font-semibold">Tu primera sucursal</div>
+                            <div className="font-semibold">{t('onboarding.first_branch_title')}</div>
                         </div>
                         <div className="text-sm text-muted mb-3">
-                            Todo en Dashboard funciona alrededor de sucursales. Creá la primera (podés editarla después).
+                            {t('onboarding.first_branch_desc')}
                         </div>
 
                         <div className="form-grid">
                             <div>
-                                <label className="field-label">Nombre de la sucursal</label>
+                                <label className="field-label">{t('onboarding.branch_name')}</label>
                                 <input className="input" value={sucursal.nombre} onChange={e => setSucursal({ ...sucursal, nombre: e.target.value })} />
                             </div>
                             <div>
-                                <label className="field-label">Tipo</label>
+                                <label className="field-label">{t('onboarding.branch_type')}</label>
                                 <select className="select" value={sucursal.tipo} onChange={e => setSucursal({ ...sucursal, tipo: e.target.value })}>
                                     <option value="local">Local / PDV</option>
                                     <option value="deposito">Depósito</option>
@@ -190,19 +225,19 @@ export default function OnboardingModal() {
                                 </select>
                             </div>
                             <div>
-                                <label className="field-label">Dirección (opcional)</label>
+                                <label className="field-label">{t('onboarding.branch_address')}</label>
                                 <input className="input" value={sucursal.direccion} onChange={e => setSucursal({ ...sucursal, direccion: e.target.value })} />
                             </div>
                             <div>
-                                <label className="field-label">Ciudad (opcional)</label>
+                                <label className="field-label">{t('onboarding.branch_city')}</label>
                                 <input className="input" value={sucursal.ciudad} onChange={e => setSucursal({ ...sucursal, ciudad: e.target.value })} />
                             </div>
                         </div>
 
                         <div className="flex justify-between mt-4">
-                            <button className="btn btn-ghost" onClick={() => setStep(1)}>← Volver</button>
+                            <button className="btn btn-ghost" onClick={() => setStep(1)}>← {t('common.back')}</button>
                             <button className="btn btn-primary btn-lg" onClick={finish}>
-                                Empezar a usar Dashboard <ArrowRight size={14} />
+                                {t('onboarding.start_using')} <ArrowRight size={14} />
                             </button>
                         </div>
                     </div>

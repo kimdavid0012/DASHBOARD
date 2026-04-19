@@ -2,8 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { BarChart3, TrendingUp, Store, Users, DollarSign } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, KpiCard, EmptyState, BarChart, LineChart, PieChart, fmtMoney, CHART_COLORS, InfoBox } from '../components/UI';
+import { useT } from '../i18n';
 
 export default function InformesPage() {
+    const t = useT();
     const { state } = useData();
     const labels = getRubroLabels(state.business.rubro);
     const [tab, setTab] = useState('general');
@@ -87,7 +89,7 @@ export default function InformesPage() {
     if (state.ventas.length === 0 && state.gastos.length === 0) {
         return (
             <div>
-                <PageHeader icon={BarChart3} title="Informes" subtitle="Reportes detallados del negocio" help={SECTION_HELP.informes} />
+                <PageHeader icon={BarChart3} title={t('pages.informes.title')} subtitle={t('pages.informes.subtitle')} help={SECTION_HELP.informes} />
                 <Card>
                     <EmptyState
                         icon={BarChart3}

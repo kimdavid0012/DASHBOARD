@@ -10,9 +10,11 @@ import {
     writeToBackupFolder, clearBackupFolder, getStorageInfo, listHistory,
     restoreFromHistory
 } from '../utils/storage';
+import { useT } from '../i18n';
 
 export default function BackupPage() {
     const { state, actions, saveStatus } = useData();
+    const t = useT();
     const [storageInfo, setStorageInfo] = useState(null);
     const [backupFolder, setBackupFolder] = useState(null);
     const [history, setHistory] = useState([]);
@@ -142,8 +144,8 @@ export default function BackupPage() {
         <div>
             <PageHeader
                 icon={Shield}
-                title="Backup · Seguridad de datos"
-                subtitle="Tu data está protegida en varias capas — no se pierde"
+                title={t('backup.title')}
+                subtitle={t('backup.subtitle')}
                 help={SECTION_HELP.backup}
                 actions={
                     <button className="btn btn-primary" onClick={handleDownload}>
@@ -224,35 +226,35 @@ export default function BackupPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
                 {/* Multi-capa info */}
-                <Card title="🛡️ Sistema multi-capa" subtitle="Así protegemos tu data">
+                <Card title={t('backup.multi_layer')} subtitle={t('backup.multi_layer_sub')}>
                     <div className="flex flex-col gap-3">
                         <StorageLayerRow
                             icon="1"
-                            title="IndexedDB (primario)"
+                            title={t('backup.layers.idb_title')}
                             desc="Guardado automático en la base de datos del navegador. Capacidad de 50-200 MB, sobrevive a cierre de pestaña, reinicio, y limpieza parcial de caché."
                             status={saveStatus.source === 'indexeddb' ? 'active' : 'idle'}
                         />
                         <StorageLayerRow
                             icon="2"
-                            title="localStorage (backup inmediato)"
+                            title={t('backup.layers.ls_title')}
                             desc="Doble escritura sincrónica. Menor capacidad (5-10MB) pero funciona como red de seguridad si IndexedDB falla."
                             status={saveStatus.lastSaved ? 'active' : 'idle'}
                         />
                         <StorageLayerRow
                             icon="3"
-                            title="Snapshots cada 10 min"
+                            title={t('backup.layers.snap_title')}
                             desc={`Histórico automático (últimos 10). Te permite restaurar si algo sale mal. Tenés ${history.length} puntos de restauración.`}
                             status="active"
                         />
                         <StorageLayerRow
                             icon="4"
-                            title="Carpeta externa (pendrive / Dropbox / OneDrive)"
+                            title={t('backup.layers.folder_title')}
                             desc={backupFolder ? `Configurada: ${backupFolder.name}` : "Elegí una carpeta para guardar backups automáticos fuera del navegador."}
                             status={backupFolder ? 'active' : 'warning'}
                         />
                         <StorageLayerRow
                             icon="5"
-                            title="Google Drive (Fase A)"
+                            title={t('backup.layers.drive_title')}
                             desc="Sync en nube cuando implementemos Firebase + Auth. Tu data accesible desde cualquier dispositivo."
                             status="pending"
                         />
@@ -260,7 +262,7 @@ export default function BackupPage() {
                 </Card>
 
                 {/* Acciones manuales */}
-                <Card title="💾 Acciones manuales" subtitle="Control total sobre tu data">
+                <Card title={t('backup.manual_actions')} subtitle={t('backup.manual_actions_sub')}>
                     <div className="flex flex-col gap-3">
                         <button className="btn btn-primary btn-lg" onClick={handleForceSave}>
                             <Save size={16} /> Guardar ahora (forzado)
@@ -313,7 +315,7 @@ export default function BackupPage() {
             </div>
 
             {/* HISTORY */}
-            <Card title="🕐 Snapshots de recuperación" subtitle="Los últimos 10 puntos guardados automáticamente" style={{ marginTop: 16 }}>
+            <Card title={t('backup.history_title')} subtitle={t('backup.history_sub')} style={{ marginTop: 16 }}>
                 {history.length === 0 ? (
                     <div className="text-sm text-muted">Aún no hay snapshots. Se crean automáticamente cada 10 minutos.</div>
                 ) : (

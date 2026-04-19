@@ -5,8 +5,10 @@ import {
 } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, KpiCard, EmptyState, BarChart, LineChart, fmtMoney, CHART_COLORS, InfoBox } from '../components/UI';
+import { useT } from '../i18n';
 
 export default function DashboardHome({ onNavigate }) {
+    const t = useT();
     const { state, actions } = useData();
     const current = state.meta.currentSucursalId || 'all';
     const labels = getRubroLabels(state.business.rubro);

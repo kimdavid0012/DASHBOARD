@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Truck, Plus, Pencil, Trash2, DollarSign, Phone, Mail } from 'lucide-react';
 import { useData, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, BarChart, fmtMoney, CHART_COLORS } from '../components/UI';
+import { useT } from '../i18n';
 
 const CATEGORIAS = ['Mercadería', 'Insumos', 'Servicios', 'Logística', 'Tecnología', 'Limpieza', 'Otros'];
 
@@ -12,6 +13,7 @@ const EMPTY = {
 };
 
 export default function ProveedoresPage() {
+    const t = useT();
     const { state, actions } = useData();
     const [open, setOpen] = useState(false);
     const [editId, setEditId] = useState(null);
@@ -56,9 +58,7 @@ export default function ProveedoresPage() {
     return (
         <div>
             <PageHeader
-                icon={Truck}
-                title="Proveedores"
-                subtitle="Quienes te proveen mercadería, insumos o servicios"
+                icon={Truck} title={t('pages.proveedores.title')} subtitle={t('pages.proveedores.subtitle')}
                 help={SECTION_HELP.proveedores}
                 actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setEditId(null); setOpen(true); }}><Plus size={14} /> Nuevo proveedor</button>}
             />

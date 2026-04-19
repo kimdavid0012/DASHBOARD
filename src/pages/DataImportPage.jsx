@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useData, SECTION_HELP, getRubroLabels } from '../store/DataContext';
 import { PageHeader, Card, Modal, Field, EmptyState, Badge, InfoBox, fmtMoney } from '../components/UI';
+import { useT } from '../i18n';
 
 // ═══════════════════════════════════════════════════════════════════
 // DATA IMPORT — Excel/CSV con IA que entiende columnas
@@ -21,6 +22,7 @@ const COLLECTION_OPTIONS = [
 ];
 
 export default function DataImportPage() {
+    const t = useT();
     const { state, actions } = useData();
     const [file, setFile] = useState(null);
     const [rawRows, setRawRows] = useState(null);
@@ -272,8 +274,8 @@ Reglas:
         <div>
             <PageHeader
                 icon={Upload}
-                title="Importar datos"
-                subtitle="Subí Excel, CSV o TSV y la IA te ayuda a mapearlos"
+                title={t('import.title')}
+                subtitle={t('import.subtitle')}
                 help={SECTION_HELP.dataimport}
             />
 

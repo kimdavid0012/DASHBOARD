@@ -6,10 +6,12 @@ import {
 import { useAuth } from '../store/AuthContext';
 import { useData } from '../store/DataContext';
 import { PageHeader, Card, Badge, InfoBox } from '../components/UI';
+import { useT } from '../i18n';
 
 export default function AccountPage() {
     const { mode, user, isCloud, isOffline, firebaseAvailable, syncStatus, signIn, signOut, switchToOffline } = useAuth();
     const { state } = useData();
+    const t = useT();
     const [signingIn, setSigningIn] = useState(false);
     const [driveInfo, setDriveInfo] = useState(null);
     const [error, setError] = useState('');
@@ -39,7 +41,7 @@ export default function AccountPage() {
     };
 
     const handleSignOut = async () => {
-        if (!confirm('¿Cerrar sesión? Tus datos quedan guardados localmente, pero no vas a sincronizar con la nube hasta que te logues de nuevo.')) return;
+        if (!confirm(t('account.sign_out_confirm'))) return;
         await signOut();
     };
 
@@ -47,8 +49,8 @@ export default function AccountPage() {
         <div>
             <PageHeader
                 icon={User}
-                title="Cuenta & Sincronización"
-                subtitle="Modo de trabajo: offline local o cloud con Google Drive"
+                title={t('account.title')}
+                subtitle={t('account.subtitle')}
             />
 
             {/* Current mode banner */}
@@ -66,12 +68,12 @@ export default function AccountPage() {
                     </div>
                     <div style={{ flex: 1 }}>
                         <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 500 }}>
-                            {isCloud ? 'Modo Cloud activo' : 'Modo Offline'}
+                            {isCloud ? t('account.mode_cloud') : t('account.mode_offline')}
                         </div>
                         <div className="text-sm text-muted" style={{ marginTop: 4 }}>
                             {isCloud
-                                ? `Sincronizando con Google Drive — multi-dispositivo`
-                                : 'Todo local en tu dispositivo. Backup a pendrive disponible.'}
+                                ? t('account.cloud_desc')
+                                : t('account.offline_desc')}
                         </div>
                         {isCloud && user && (
                             <div className="flex items-center gap-2 mt-2">
@@ -82,7 +84,7 @@ export default function AccountPage() {
                         )}
                     </div>
                     <Badge variant={isCloud ? 'success' : 'muted'}>
-                        {isCloud ? '✓ ONLINE' : 'LOCAL'}
+                        {isCloud ? t('account.badge_online') : t('account.badge_local')}
                     </Badge>
                 </div>
             </Card>
@@ -182,7 +184,7 @@ export default function AccountPage() {
 
             {/* Sync status (solo si está en cloud) */}
             {isCloud && (
-                <Card title="Estado de sincronización" style={{ marginTop: 16 }}>
+                <Card title={t('account.sync_status')} style={{ marginTop: 16 }}>
                     <div className="kpi-grid">
                         <div className="kpi-card">
                             <div className="kpi-icon" style={{ background: 'rgba(74, 222, 128, 0.15)', color: 'var(--success)' }}>
@@ -191,9 +193,9 @@ export default function AccountPage() {
                             <div>
                                 <div className="kpi-label">Último sync</div>
                                 <div className="kpi-value" style={{ fontSize: 15 }}>
-                                    {syncStatus.syncing ? 'Sincronizando...'
+                                    {syncStatus.syncing ? t('account.syncing')
                                         : syncStatus.lastSyncAt ? ago(syncStatus.lastSyncAt) + ' atrás'
-                                            : 'Pendiente'}
+                                            : t('account.pending')}
                                 </div>
                             </div>
                         </div>
@@ -233,7 +235,7 @@ export default function AccountPage() {
             {/* Privacy & security explainer */}
             <Card style={{ marginTop: 16 }}>
                 <h3 style={{ margin: '0 0 12px', fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500 }}>
-                    🔒 Privacidad y seguridad
+                    🔒
                 </h3>
                 <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text-secondary)' }}>
                     <p style={{ margin: '0 0 10px' }}>

@@ -323,7 +323,31 @@ export function getRubroConfig(rubro) {
     return RUBRO_CONFIG[rubro] || RUBRO_CONFIG.general;
 }
 
+// Reads current language's labels from i18n dictionaries (lazy, avoids circular)
+let _i18nLabels = null;
+function loadI18nLabels() {
+    if (_i18nLabels) return _i18nLabels;
+    try {
+        _i18nLabels = require('../i18n').getRubroLabelsI18n;
+    } catch {
+        _i18nLabels = null;
+    }
+    return _i18nLabels;
+}
+
 export function getRubroLabels(rubro) {
+    // Try i18n first (only works if i18n module is ready)
+    if (typeof window !== 'undefined') {
+        try {
+            // Dynamic access to i18n without static import (avoids React/module cycles)
+            const mod = window.__i18nRubroLabels;
+            if (typeof mod === 'function') {
+                const labels = mod(rubro);
+                if (labels) return labels;
+            }
+        } catch { /* fall through */ }
+    }
+    // Fallback: hardcoded Spanish labels from RUBRO_CONFIG
     return getRubroConfig(rubro).labels;
 }
 

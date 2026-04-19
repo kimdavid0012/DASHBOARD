@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Store, Plus, Pencil, Trash2, MapPin, Phone, User as UserIcon } from 'lucide-react';
 import { useData, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard } from '../components/UI';
+import { useT } from '../i18n';
 
 const PROVINCIAS = ['Buenos Aires', 'CABA', 'Catamarca', 'Chaco', 'Chubut', 'Córdoba', 'Corrientes', 'Entre Ríos', 'Formosa', 'Jujuy', 'La Pampa', 'La Rioja', 'Mendoza', 'Misiones', 'Neuquén', 'Río Negro', 'Salta', 'San Juan', 'San Luis', 'Santa Cruz', 'Santa Fe', 'Santiago del Estero', 'Tierra del Fuego', 'Tucumán'];
 
@@ -12,6 +13,7 @@ const EMPTY = {
 };
 
 export default function SucursalesPage() {
+    const t = useT();
     const { state, actions } = useData();
     const [modalOpen, setModalOpen] = useState(false);
     const [editingId, setEditingId] = useState(null);
@@ -44,9 +46,7 @@ export default function SucursalesPage() {
     return (
         <div>
             <PageHeader
-                icon={Store}
-                title="Sucursales"
-                subtitle="Locales, depósitos y tiendas online"
+                icon={Store} title={t('pages.sucursales.title')} subtitle={t('pages.sucursales.subtitle')}
                 help={SECTION_HELP.sucursales}
                 actions={<button className="btn btn-primary" onClick={openNew}><Plus size={14} /> Nueva sucursal</button>}
             />

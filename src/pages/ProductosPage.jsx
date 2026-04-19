@@ -2,8 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { Package, Plus, Pencil, Trash2, AlertTriangle, TrendingUp, Archive, Barcode } from 'lucide-react';
 import { useData, getRubroLabels, getRubroConfig, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, fmtMoney, InfoBox } from '../components/UI';
+import { useT } from '../i18n';
 
 export default function ProductosPage() {
+    const t = useT();
     const { state, actions } = useData();
     const labels = getRubroLabels(state.business.rubro);
     const rubroConfig = getRubroConfig(state.business.rubro);

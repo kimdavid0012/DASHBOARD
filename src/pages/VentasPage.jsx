@@ -2,8 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { Receipt, Eye, Trash2, Filter, ShoppingCart } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, Modal, EmptyState, Badge, KpiCard, fmtMoney, fmtDate, InfoBox } from '../components/UI';
+import { useT } from '../i18n';
 
 export default function VentasPage({ onNavigate }) {
+    const t = useT();
     const { state, actions } = useData();
     const labels = getRubroLabels(state.business.rubro);
     const current = state.meta.currentSucursalId || 'all';

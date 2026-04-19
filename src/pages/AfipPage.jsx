@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useData, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, InfoBox, fmtMoney, fmtDate } from '../components/UI';
+import { useT } from '../i18n';
 
 // ═══════════════════════════════════════════════════════════════════
 // AFIP — Control tributario, facturación, VEPs
@@ -35,6 +36,7 @@ const TIPOS_FACTURA = [
 ];
 
 export default function AfipPage() {
+    const t = useT();
     const { state, actions } = useData();
     const [tab, setTab] = useState('dashboard');
 
@@ -93,8 +95,8 @@ export default function AfipPage() {
             <div>
                 <PageHeader
                     icon={FileText}
-                    title="AFIP · Fiscal"
-                    subtitle="Facturación, vencimientos y control tributario"
+                    title={t('afip.title')}
+                    subtitle={t('afip.subtitle')}
                     help={SECTION_HELP.afip}
                 />
                 <Card>
@@ -117,7 +119,7 @@ export default function AfipPage() {
         <div>
             <PageHeader
                 icon={FileText}
-                title="AFIP · Fiscal"
+                title={t('afip.title')}
                 subtitle={`${state.business.razonSocial || cuit} · CUIT ${cuit} · ${CONDICIONES_IVA.find(c => c.id === condicionIva)?.label}`}
                 help={SECTION_HELP.afip}
                 actions={

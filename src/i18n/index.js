@@ -42,7 +42,6 @@ function subscribe(cb) {
 function getSnapshot() {
     return currentLang;
 }
-
 // ── Public API ──
 export function getLang() {
     return currentLang;
@@ -126,4 +125,9 @@ export function getRubroLabelsI18n(rubro) {
     if (labels) return labels;
     // Fallback to Spanish
     return DICTIONARIES[DEFAULT_LANG]?.rubros?.[rubro] || DICTIONARIES[DEFAULT_LANG]?.rubros?.general;
+}
+
+// Expose on window so DataContext.getRubroLabels can use it without circular imports
+if (typeof window !== 'undefined') {
+    window.__i18nRubroLabels = getRubroLabelsI18n;
 }

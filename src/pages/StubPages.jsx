@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, InfoBox, fmtMoney, fmtDate } from '../components/UI';
+import { useT, langInstructions } from '../i18n';
 
 // ═══════════════════════════════════════════════════════════════════
 // 🤖 AGENTS — universal, rubro-aware, 24/7 ready
@@ -180,6 +181,7 @@ const SCHEDULE_OPTIONS = [
 ];
 
 export function AgentsPage({ onNavigate }) {
+    const t = useT();
     const { state, actions } = useData();
     const [outputs, setOutputs] = useState({});
     const [running, setRunning] = useState({});
@@ -203,7 +205,9 @@ export function AgentsPage({ onNavigate }) {
         setRunning({ ...running, [agent.id]: true });
 
         try {
-            const prompt = agent.buildPrompt(state, labels);
+            const basePrompt = agent.buildPrompt(state, labels);
+            // Prefix language instruction — overrides default Spanish in the prompts
+            const prompt = `⚠️ CRITICAL LANGUAGE RULE: ${langInstructions()}\n\n---\n\n${basePrompt}`;
 
             let reply = '';
             if (state.integraciones.anthropicKey) {
@@ -254,8 +258,8 @@ export function AgentsPage({ onNavigate }) {
         <div>
             <PageHeader
                 icon={Bot}
-                title="Agentes AI"
-                subtitle={`${AGENTS.length} agentes especializados para tu ${state.business.rubro}`}
+                title={t('agents.title')}
+                subtitle={t('agents.subtitle', {n: AGENTS.length, rubro: state.business.rubro})}
                 help={SECTION_HELP.agents}
                 actions={
                     hasKey ? (
@@ -369,11 +373,12 @@ const ComingSoonCard = ({ icon: Icon, title, description, steps, onNavigate }) =
 );
 
 export function MarketingPage({ onNavigate }) {
+    const t = useT();
     const { state } = useData();
     const hasMeta = !!state.integraciones.metaAccessToken;
     return (
         <div>
-            <PageHeader icon={Megaphone} title="Marketing" subtitle="Meta Ads, WhatsApp y Email Marketing" help={SECTION_HELP.marketing} />
+            <PageHeader icon={Megaphone} title={t('pages.marketing.title')} subtitle="Meta Ads, WhatsApp y Email Marketing" help={SECTION_HELP.marketing} />
             {!hasMeta ? (
                 <ComingSoonCard
                     icon={Megaphone}
@@ -390,11 +395,12 @@ export function MarketingPage({ onNavigate }) {
 }
 
 export function InstagramPage({ onNavigate }) {
+    const t = useT();
     const { state } = useData();
     const hasIG = !!state.integraciones.instagramBusinessId;
     return (
         <div>
-            <PageHeader icon={Instagram} title="Instagram" subtitle="Analytics + planner de contenido" help={SECTION_HELP.instagram} />
+            <PageHeader icon={Instagram} title={t('pages.instagram.title')} subtitle="Analytics + planner de contenido" help={SECTION_HELP.instagram} />
             {!hasIG ? (
                 <ComingSoonCard
                     icon={Instagram}
@@ -411,9 +417,10 @@ export function InstagramPage({ onNavigate }) {
 }
 
 export function TikTokPage({ onNavigate }) {
+    const t = useT();
     return (
         <div>
-            <PageHeader icon={Music2} title="TikTok" subtitle="Analytics y planner de videos" help={SECTION_HELP.tiktok} />
+            <PageHeader icon={Music2} title={t('pages.tiktok.title')} subtitle="Analytics y planner de videos" help={SECTION_HELP.tiktok} />
             <ComingSoonCard
                 icon={Music2}
                 title="TikTok Analytics"
@@ -426,11 +433,12 @@ export function TikTokPage({ onNavigate }) {
 }
 
 export function AnalyticsPage({ onNavigate }) {
+    const t = useT();
     const { state } = useData();
     const hasGA = !!state.integraciones.googleAnalyticsId;
     return (
         <div>
-            <PageHeader icon={BarChart3} title="Analytics" subtitle="Tráfico web (GA4)" help={SECTION_HELP.analytics} />
+            <PageHeader icon={BarChart3} title={t('pages.analytics.title')} subtitle="Tráfico web (GA4)" help={SECTION_HELP.analytics} />
             {!hasGA ? (
                 <ComingSoonCard
                     icon={BarChart3}
@@ -447,6 +455,7 @@ export function AnalyticsPage({ onNavigate }) {
 }
 
 export function WebPage({ onNavigate }) {
+    const t = useT();
     const { state } = useData();
     const hasWoo = !!state.integraciones.wooStoreUrl;
     return (
@@ -471,6 +480,7 @@ export function WebPage({ onNavigate }) {
 // BANKING
 // ═══════════════════════════════════════════════════════════════════
 export function BankingPage() {
+    const t = useT();
     const { state, actions } = useData();
     const [open, setOpen] = useState(false);
     const [editId, setEditId] = useState(null);
@@ -559,6 +569,7 @@ export function BankingPage() {
 // TAREAS (Kanban)
 // ═══════════════════════════════════════════════════════════════════
 export function TareasPage() {
+    const t = useT();
     const { state, actions } = useData();
     const [open, setOpen] = useState(false);
     const EMPTY = { titulo: '', descripcion: '', estado: 'pendiente', prioridad: 'normal', asignadoA: '', sucursalId: '', fechaLimite: '' };

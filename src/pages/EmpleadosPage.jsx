@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Users, Plus, Pencil, Trash2, Phone, DollarSign } from 'lucide-react';
 import { useData, filterBySucursal, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, BarChart, fmtMoney, CHART_COLORS } from '../components/UI';
+import { useT } from '../i18n';
 
 const CARGOS = ['Empleado', 'Cajero', 'Vendedor/a', 'Encargado/a', 'Mozo/a', 'Cocinero/a', 'Repartidor/a', 'Administrativo', 'Responsable de sucursal', 'Otro'];
 
@@ -14,6 +15,7 @@ const EMPTY = {
 };
 
 export default function EmpleadosPage() {
+    const t = useT();
     const { state, actions } = useData();
     const [open, setOpen] = useState(false);
     const [editId, setEditId] = useState(null);
