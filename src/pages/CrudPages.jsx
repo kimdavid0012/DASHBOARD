@@ -96,7 +96,7 @@ export function GastosPage() {
     const current = state.meta.currentSucursalId || 'all';
     const [open, setOpen] = useState(false);
     const [editId, setEditId] = useState(null);
-    const EMPTY = { concepto: '', monto: '', categoria: 'Alquiler', fecha: new Date().toISOString().slice(0, 10), sucursalId: '', metodo: 'Efectivo', notas: '' };
+    const EMPTY = { concepto: '', monto: '', categoria: 'Alquiler', fecha: new Date().toISOString().slice(0, 10), sucursalId: '', metodo: 'Efectivo', notas: '', recurrente: false, frecuencia: 'mensual' };
     const [form, setForm] = useState(EMPTY);
 
     const CATEGORIAS = ['Alquiler', 'Sueldos', 'Servicios', 'Mercadería', 'Impuestos', 'Marketing', 'Mantenimiento', 'Transporte', 'Papelería', 'Otros'];
@@ -147,7 +147,11 @@ export function GastosPage() {
                                 {gastos.slice(0, 100).map(g => (
                                     <tr key={g.id}>
                                         <td className="text-sm">{fmtDate(g.fecha)}</td>
-                                        <td className="font-semibold">{g.concepto}</td>
+                                        <td className="font-semibold">
+                                            {g.concepto}
+                                            {g.recurrente && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--accent)' }} title={`Recurrente ${g.frecuencia || 'mensual'}`}>🔁</span>}
+                                            {g.generadoPor && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text-muted)' }} title="Auto-generado">↻</span>}
+                                        </td>
                                         <td><Badge>{g.categoria}</Badge></td>
                                         <td className="text-sm">{state.sucursales.find(s => s.id === g.sucursalId)?.nombre || '—'}</td>
                                         <td className="text-sm">{g.metodo}</td>
@@ -173,6 +177,40 @@ export function GastosPage() {
                     <Field label="Método"><select className="select" value={form.metodo} onChange={e => setForm({ ...form, metodo: e.target.value })}>{METODOS.map(m => <option key={m}>{m}</option>)}</select></Field>
                 </div>
                 <div className="mt-3"><Field label="Notas"><textarea className="textarea" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} /></Field></div>
+                <div className="mt-3" style={{
+                    padding: 12, background: form.recurrente ? 'rgba(99,241,203,0.05)' : 'var(--bg-elevated)',
+                    borderRadius: 10, border: `1px solid ${form.recurrente ? 'var(--border-accent)' : 'var(--border-color)'}`
+                }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                        <input
+                            type="checkbox"
+                            checked={!!form.recurrente}
+                            onChange={e => setForm({ ...form, recurrente: e.target.checked })}
+                            style={{ width: 18, height: 18, cursor: 'pointer' }}
+                        />
+                        <div>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>🔁 Gasto recurrente</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                Se auto-genera cada mes/semana para no cargarlo a mano
+                            </div>
+                        </div>
+                    </label>
+                    {form.recurrente && (
+                        <div style={{ marginTop: 10, paddingLeft: 28 }}>
+                            <Field label="Frecuencia">
+                                <select className="select" value={form.frecuencia} onChange={e => setForm({ ...form, frecuencia: e.target.value })}>
+                                    <option value="mensual">Mensual</option>
+                                    <option value="semanal">Semanal</option>
+                                    <option value="quincenal">Quincenal</option>
+                                    <option value="anual">Anual</option>
+                                </select>
+                            </Field>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                                💡 Al guardar, este gasto se repetirá automáticamente cada mes/semana. Podés borrar cualquier ocurrencia desde la lista.
+                            </div>
+                        </div>
+                    )}
+                </div>
                 <div className="flex gap-2 mt-4 justify-end">
                     <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
                     <button className="btn btn-primary" onClick={save}>{editId ? 'Guardar' : 'Crear'}</button>

@@ -376,21 +376,227 @@ const ComingSoonCard = ({ icon: Icon, title, description, steps, onNavigate }) =
 export function MarketingPage({ onNavigate }) {
     const t = useT();
     const { state } = useData();
+    const [tab, setTab] = useState('email');
     const hasMeta = !!state.integraciones.metaAccessToken;
+    const hasAnthropic = !!state.integraciones.anthropicKey;
+
     return (
         <div>
-            <PageHeader icon={Megaphone} title={t('pages.marketing.title')} subtitle="Meta Ads, WhatsApp y Email Marketing" help={SECTION_HELP.marketing} />
-            {!hasMeta ? (
-                <ComingSoonCard
-                    icon={Megaphone}
-                    title="Conectá Meta Ads"
-                    description="Vas a ver campañas activas, presupuesto, impresiones y conversiones."
-                    steps={['Andá a Configuración → Integraciones', 'Pegá tu Meta Access Token', 'Pegá tu Pixel ID (opcional)', 'Volvé acá']}
-                    onNavigate={() => onNavigate?.('settings')}
-                />
-            ) : (
-                <Card><EmptyState icon={Megaphone} title="Meta conectado ✓" description="Dashboard de campañas se activará al ejecutar el agente de Marketing (próximamente)." /></Card>
+            <PageHeader icon={Megaphone} title={t('pages.marketing.title')} subtitle="Email marketing con IA, Meta Ads y más" help={SECTION_HELP.marketing} />
+
+            <div className="tabs" style={{ marginBottom: 16 }}>
+                <button className={`tab ${tab === 'email' ? 'active' : ''}`} onClick={() => setTab('email')}>
+                    📧 Email Campaigns
+                </button>
+                <button className={`tab ${tab === 'meta' ? 'active' : ''}`} onClick={() => setTab('meta')}>
+                    📘 Meta Ads
+                </button>
+            </div>
+
+            {tab === 'email' && (
+                hasAnthropic ? <EmailCampaigns state={state} /> :
+                    <ComingSoonCard
+                        icon={Megaphone}
+                        title="Activá IA para generar emails"
+                        description="Email campaigns usa Claude para generar emails personalizados por segmento de cliente."
+                        steps={['Configuración → Integraciones', 'Pegá tu Anthropic API Key', 'Volvé a esta pestaña']}
+                        onNavigate={() => onNavigate?.('settings')}
+                    />
             )}
+
+            {tab === 'meta' && (
+                !hasMeta ? (
+                    <ComingSoonCard
+                        icon={Megaphone}
+                        title="Conectá Meta Ads"
+                        description="Vas a ver campañas activas, presupuesto, impresiones y conversiones."
+                        steps={['Andá a Configuración → Integraciones', 'Pegá tu Meta Access Token', 'Pegá tu Pixel ID (opcional)', 'Volvé acá']}
+                        onNavigate={() => onNavigate?.('settings')}
+                    />
+                ) : (
+                    <Card><EmptyState icon={Megaphone} title="Meta conectado ✓" description="Dashboard de campañas se activará al ejecutar el agente de Marketing." /></Card>
+                )
+            )}
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EMAIL CAMPAIGNS — generador con IA
+// ═══════════════════════════════════════════════════════════════════
+function EmailCampaigns({ state }) {
+    const [ocasion, setOcasion] = React.useState('promo');
+    const [segmento, setSegmento] = React.useState('all');
+    const [descuento, setDescuento] = React.useState('');
+    const [cupon, setCupon] = React.useState('');
+    const [productoId, setProductoId] = React.useState('');
+    const [generating, setGenerating] = React.useState(false);
+    const [email, setEmail] = React.useState(null);
+    const [error, setError] = React.useState('');
+    const [ocasiones, setOcasiones] = React.useState([]);
+    const [segmentos, setSegmentos] = React.useState([]);
+    const [clientesSegmentados, setClientesSegmentados] = React.useState([]);
+
+    React.useEffect(() => {
+        import('../utils/emailCampaigns').then(mod => {
+            setOcasiones(mod.EMAIL_OCASIONES);
+            setSegmentos(mod.EMAIL_SEGMENTOS);
+        });
+    }, []);
+
+    React.useEffect(() => {
+        if (segmentos.length === 0) return;
+        import('../utils/emailCampaigns').then(({ segmentCustomers }) => {
+            setClientesSegmentados(segmentCustomers(state.clientes || [], state.ventas || [], segmento));
+        });
+    }, [segmento, state.clientes, state.ventas, segmentos.length]);
+
+    const generate = async () => {
+        setGenerating(true); setError(''); setEmail(null);
+        try {
+            const { generateEmail } = await import('../utils/emailCampaigns');
+            const producto = state.productos?.find(p => p.id === productoId);
+            const result = await generateEmail({
+                apiKey: state.integraciones.anthropicKey,
+                ocasion,
+                business: state.business,
+                segmento,
+                context: {
+                    descuento: descuento || undefined,
+                    cupon: cupon || undefined,
+                    productoDestacado: producto ? { nombre: producto.nombre, precioVenta: producto.precioVenta } : undefined
+                }
+            });
+            setEmail(result);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setGenerating(false);
+        }
+    };
+
+    const copyAll = () => {
+        if (!email) return;
+        const text = `SUBJECT: ${email.subject}\n\n${email.body_text}`;
+        navigator.clipboard.writeText(text);
+        alert('✅ Copiado al portapapeles');
+    };
+
+    const openInMailto = () => {
+        if (!email) return;
+        const emails = clientesSegmentados.map(c => c.email).filter(Boolean).join(',');
+        const subject = encodeURIComponent(email.subject);
+        const body = encodeURIComponent(email.body_text);
+        window.location.href = `mailto:?bcc=${emails}&subject=${subject}&body=${body}`;
+    };
+
+    return (
+        <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+                {/* Config panel */}
+                <Card title="🎯 Generar email con IA">
+                    <div className="form-grid">
+                        <Field label="Ocasión">
+                            <select className="select" value={ocasion} onChange={e => setOcasion(e.target.value)}>
+                                {ocasiones.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                            </select>
+                        </Field>
+
+                        <Field label="Segmento destinatario">
+                            <select className="select" value={segmento} onChange={e => setSegmento(e.target.value)}>
+                                {segmentos.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                            </select>
+                        </Field>
+
+                        <Field label="Descuento (opcional)">
+                            <input className="input" placeholder="15% / $5000" value={descuento} onChange={e => setDescuento(e.target.value)} />
+                        </Field>
+
+                        <Field label="Código cupón (opcional)">
+                            <input className="input" placeholder="VIP15" value={cupon} onChange={e => setCupon(e.target.value)} />
+                        </Field>
+
+                        <Field label="Producto destacado (opcional)">
+                            <select className="select" value={productoId} onChange={e => setProductoId(e.target.value)}>
+                                <option value="">— Ninguno —</option>
+                                {(state.productos || []).slice(0, 50).map(p => (
+                                    <option key={p.id} value={p.id}>{p.nombre}</option>
+                                ))}
+                            </select>
+                        </Field>
+                    </div>
+
+                    <div style={{
+                        marginTop: 16, padding: 12, background: 'var(--bg-elevated)',
+                        borderRadius: 10, fontSize: 13
+                    }}>
+                        <strong>📊 Destinatarios:</strong> {clientesSegmentados.length} cliente{clientesSegmentados.length !== 1 ? 's' : ''} en este segmento
+                        {clientesSegmentados.length > 0 && (
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                {clientesSegmentados.filter(c => c.email).length} con email registrado
+                            </div>
+                        )}
+                    </div>
+
+                    <button className="btn btn-primary" style={{ marginTop: 16, width: '100%' }} onClick={generate} disabled={generating}>
+                        {generating ? '⏳ Generando...' : '✨ Generar email con IA'}
+                    </button>
+
+                    {error && <InfoBox variant="warning" style={{ marginTop: 12 }}><strong>Error:</strong> {error}</InfoBox>}
+                </Card>
+
+                {/* Preview panel */}
+                <Card title="📬 Preview del email">
+                    {!email ? (
+                        <EmptyState
+                            icon={Megaphone}
+                            title="Tu email aparecerá acá"
+                            description="Configurá la ocasión y segmento, luego tocá 'Generar'."
+                        />
+                    ) : (
+                        <div>
+                            <div style={{ padding: 12, background: 'var(--bg-elevated)', borderRadius: 10, marginBottom: 12 }}>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>SUBJECT:</div>
+                                <div style={{ fontWeight: 600, fontSize: 15 }}>{email.subject}</div>
+                                {email.preheader && (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                                        <em>{email.preheader}</em>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div style={{
+                                padding: 16, background: 'white', color: '#222',
+                                borderRadius: 10, minHeight: 200, fontSize: 14, lineHeight: 1.5
+                            }}>
+                                <div dangerouslySetInnerHTML={{ __html: email.body_html }} />
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                                <button className="btn btn-ghost btn-sm" onClick={copyAll}>
+                                    📋 Copiar
+                                </button>
+                                <button
+                                    className="btn btn-primary btn-sm"
+                                    onClick={openInMailto}
+                                    disabled={clientesSegmentados.filter(c => c.email).length === 0}
+                                >
+                                    ✉️ Abrir en Mail ({clientesSegmentados.filter(c => c.email).length})
+                                </button>
+                                <button className="btn btn-ghost btn-sm" onClick={() => setEmail(null)}>
+                                    ✕ Descartar
+                                </button>
+                            </div>
+
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12, padding: 10, background: 'rgba(99,241,203,0.05)', borderRadius: 8 }}>
+                                💡 <strong>Tip:</strong> "Abrir en Mail" usa tu cliente de correo (Gmail, Outlook) para enviar.
+                                Si tenés Resend o Brevo, copiá el HTML y pegalo ahí.
+                                El placeholder {'{nombre}'} se reemplaza por el primer nombre del cliente.
+                            </div>
+                        </div>
+                    )}
+                </Card>
+            </div>
         </div>
     );
 }
@@ -398,20 +604,189 @@ export function MarketingPage({ onNavigate }) {
 export function InstagramPage({ onNavigate }) {
     const t = useT();
     const { state } = useData();
-    const hasIG = !!state.integraciones.instagramBusinessId;
-    return (
-        <div>
-            <PageHeader icon={Instagram} title={t('pages.instagram.title')} subtitle="Analytics + planner de contenido" help={SECTION_HELP.instagram} />
-            {!hasIG ? (
+    const hasIG = !!state.integraciones.instagramBusinessId && !!state.integraciones.metaAccessToken;
+
+    if (!hasIG) {
+        return (
+            <div>
+                <PageHeader icon={Instagram} title={t('pages.instagram.title')} subtitle="Analytics + planner de contenido" help={SECTION_HELP.instagram} />
                 <ComingSoonCard
                     icon={Instagram}
                     title="Conectá tu cuenta de Instagram Business"
-                    description="Seguidores, alcance, engagement y calendario de contenido."
-                    steps={['Convertí tu IG a Business', 'Conectala a tu Facebook', 'Obtené el IG Business ID', 'Pegalo en Configuración']}
+                    description="Seguidores, alcance, engagement y últimos posts."
+                    steps={['Convertí tu IG a Business', 'Conectala a tu Facebook', 'Obtené IG Business ID + Meta Access Token', 'Pegalos en Configuración']}
                     onNavigate={() => onNavigate?.('settings')}
                 />
-            ) : (
-                <Card><EmptyState icon={Instagram} title="IG Business conectado ✓" description="Analytics se activarán al ejecutar el agente de contenido." /></Card>
+            </div>
+        );
+    }
+
+    return <InstagramDashboard state={state} />;
+}
+
+function InstagramDashboard({ state }) {
+    const [loading, setLoading] = React.useState(false);
+    const [error, setError] = React.useState('');
+    const [data, setData] = React.useState(() => {
+        try {
+            const cached = localStorage.getItem('ig_cache_v1');
+            return cached ? JSON.parse(cached) : null;
+        } catch { return null; }
+    });
+
+    const igId = state.integraciones.instagramBusinessId;
+    const token = state.integraciones.metaAccessToken;
+
+    const fetchIG = async () => {
+        setLoading(true); setError('');
+        try {
+            // IG Graph API sí soporta CORS desde browser — no necesita proxy
+            const profileUrl = `https://graph.facebook.com/v19.0/${igId}?fields=name,username,biography,followers_count,follows_count,media_count,profile_picture_url&access_token=${token}`;
+            const mediaUrl = `https://graph.facebook.com/v19.0/${igId}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count&limit=12&access_token=${token}`;
+
+            const [profileRes, mediaRes] = await Promise.all([
+                fetch(profileUrl),
+                fetch(mediaUrl)
+            ]);
+
+            if (!profileRes.ok) {
+                const errTxt = await profileRes.text();
+                throw new Error(`Error ${profileRes.status}: ${errTxt.slice(0, 200)}`);
+            }
+
+            const profile = await profileRes.json();
+            const mediaData = mediaRes.ok ? await mediaRes.json() : { data: [] };
+
+            const payload = {
+                profile,
+                media: mediaData.data || [],
+                fetchedAt: new Date().toISOString()
+            };
+            setData(payload);
+            localStorage.setItem('ig_cache_v1', JSON.stringify(payload));
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    React.useEffect(() => { if (!data) fetchIG(); }, []);
+
+    const profile = data?.profile;
+    const media = data?.media || [];
+
+    // Engagement stats
+    const totalLikes = media.reduce((s, m) => s + (m.like_count || 0), 0);
+    const totalComments = media.reduce((s, m) => s + (m.comments_count || 0), 0);
+    const engagementRate = profile?.followers_count && media.length > 0
+        ? ((totalLikes + totalComments) / (media.length * profile.followers_count) * 100).toFixed(2)
+        : 0;
+    const avgLikes = media.length > 0 ? Math.round(totalLikes / media.length) : 0;
+
+    return (
+        <div>
+            <PageHeader
+                icon={Instagram}
+                title={profile ? `@${profile.username}` : 'Instagram'}
+                subtitle={profile?.name || 'Analytics de tu cuenta'}
+                help={SECTION_HELP.instagram}
+                actions={
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        {data?.fetchedAt && (
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                {new Date(data.fetchedAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                        )}
+                        <button className="btn btn-primary" onClick={fetchIG} disabled={loading}>
+                            🔄 {loading ? 'Cargando...' : 'Actualizar'}
+                        </button>
+                    </div>
+                }
+            />
+
+            {error && (
+                <InfoBox variant="warning">
+                    <strong>Error:</strong> {error}
+                    <div style={{ fontSize: 12, marginTop: 8 }}>
+                        💡 Revisá que tu Meta Access Token esté vigente (caducan cada 60 días). Generá uno nuevo en developers.facebook.com.
+                    </div>
+                </InfoBox>
+            )}
+
+            {profile && (
+                <>
+                    <div className="kpi-grid mb-4">
+                        <KpiCard icon={<Users2 size={20} />} label="Seguidores" value={(profile.followers_count || 0).toLocaleString('es-AR')} color="#e1306c" />
+                        <KpiCard icon={<Instagram size={20} />} label="Publicaciones" value={profile.media_count || 0} color="#63f1cb" />
+                        <KpiCard icon={<Eye size={20} />} label="Likes promedio" value={avgLikes.toLocaleString('es-AR')} color="#fbbf24" />
+                        <KpiCard icon={<TrendingUp size={20} />} label="Engagement" value={engagementRate + '%'} color="#a78bfa" hint="Últimos 12 posts" />
+                    </div>
+
+                    {media.length > 0 && (
+                        <Card title="📸 Últimos posts" subtitle={`${media.length} publicaciones recientes`}>
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+                                gap: 10
+                            }}>
+                                {media.map(m => (
+                                    <a
+                                        key={m.id}
+                                        href={m.permalink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                            position: 'relative',
+                                            display: 'block',
+                                            aspectRatio: '1',
+                                            borderRadius: 10,
+                                            overflow: 'hidden',
+                                            background: 'var(--bg-elevated)',
+                                            textDecoration: 'none',
+                                            color: 'inherit'
+                                        }}
+                                    >
+                                        <img
+                                            src={m.thumbnail_url || m.media_url}
+                                            alt=""
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        />
+                                        <div style={{
+                                            position: 'absolute',
+                                            bottom: 0, left: 0, right: 0,
+                                            padding: '24px 8px 8px',
+                                            background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
+                                            color: 'white',
+                                            fontSize: 11,
+                                            display: 'flex',
+                                            gap: 8,
+                                            justifyContent: 'space-between'
+                                        }}>
+                                            <span>❤️ {(m.like_count || 0).toLocaleString('es-AR')}</span>
+                                            <span>💬 {(m.comments_count || 0).toLocaleString('es-AR')}</span>
+                                        </div>
+                                        {m.media_type === 'VIDEO' && (
+                                            <div style={{ position: 'absolute', top: 8, right: 8, fontSize: 14 }}>🎬</div>
+                                        )}
+                                        {m.media_type === 'CAROUSEL_ALBUM' && (
+                                            <div style={{ position: 'absolute', top: 8, right: 8, fontSize: 14 }}>🎞️</div>
+                                        )}
+                                    </a>
+                                ))}
+                            </div>
+                        </Card>
+                    )}
+                </>
+            )}
+
+            {loading && !data && (
+                <Card>
+                    <div style={{ textAlign: 'center', padding: 40 }}>
+                        <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+                        <div>Cargando tu Instagram...</div>
+                    </div>
+                </Card>
             )}
         </div>
     );
@@ -436,20 +811,211 @@ export function TikTokPage({ onNavigate }) {
 export function AnalyticsPage({ onNavigate }) {
     const t = useT();
     const { state } = useData();
-    const hasGA = !!state.integraciones.googleAnalyticsId;
+    const [range, setRange] = React.useState({ type: 'month' });
+
+    const ventas = React.useMemo(() =>
+        filterByDateRange(state.ventas || [], range, v => v.fecha),
+    [state.ventas, range]);
+
+    const gastos = React.useMemo(() =>
+        filterByDateRange(state.gastos || [], range, g => g.fecha),
+    [state.gastos, range]);
+
+    // Ingresos vs gastos
+    const totalVentas = ventas.reduce((s, v) => s + Number(v.total || 0), 0);
+    const totalGastos = gastos.reduce((s, g) => s + Number(g.monto || 0), 0);
+    const margen = totalVentas - totalGastos;
+    const margenPct = totalVentas > 0 ? (margen / totalVentas * 100) : 0;
+
+    // Clientes: top por facturación
+    const topClientes = React.useMemo(() => {
+        const agg = {};
+        ventas.forEach(v => {
+            if (!v.clienteId) return;
+            agg[v.clienteId] = (agg[v.clienteId] || 0) + Number(v.total || 0);
+        });
+        return Object.entries(agg)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([id, total], i) => {
+                const c = state.clientes?.find(x => x.id === id);
+                return {
+                    label: c?.nombre || 'Cliente desconocido',
+                    value: total,
+                    display: fmtMoney(total, state.business.moneda),
+                    color: CHART_COLORS[i % CHART_COLORS.length]
+                };
+            });
+    }, [ventas, state.clientes, state.business.moneda]);
+
+    // Productos: top por cantidad
+    const topProductos = React.useMemo(() => {
+        const count = {};
+        ventas.forEach(v => (v.items || []).forEach(it => {
+            if (!count[it.productoId]) count[it.productoId] = { cant: 0, total: 0 };
+            count[it.productoId].cant += Number(it.cantidad || 0);
+            count[it.productoId].total += Number(it.subtotal || it.total || 0);
+        }));
+        return Object.entries(count)
+            .sort((a, b) => b[1].total - a[1].total)
+            .slice(0, 10)
+            .map(([pid, v], i) => {
+                const p = state.productos?.find(x => x.id === pid);
+                return {
+                    label: p?.nombre || 'Desconocido',
+                    value: v.total,
+                    display: `${v.cant} ud · ${fmtMoney(v.total, state.business.moneda)}`,
+                    color: CHART_COLORS[i % CHART_COLORS.length]
+                };
+            });
+    }, [ventas, state.productos, state.business.moneda]);
+
+    // Gastos por categoría
+    const gastosPorCat = React.useMemo(() => {
+        const agg = {};
+        gastos.forEach(g => {
+            agg[g.categoria || 'Otros'] = (agg[g.categoria || 'Otros'] || 0) + Number(g.monto || 0);
+        });
+        return Object.entries(agg)
+            .sort((a, b) => b[1] - a[1])
+            .map(([label, value], i) => ({
+                label, value,
+                display: fmtMoney(value, state.business.moneda),
+                color: CHART_COLORS[i % CHART_COLORS.length]
+            }));
+    }, [gastos, state.business.moneda]);
+
+    // Método de pago
+    const metodosPago = React.useMemo(() => {
+        const agg = {};
+        ventas.forEach(v => {
+            const m = v.metodo || 'efectivo';
+            agg[m] = (agg[m] || 0) + Number(v.total || 0);
+        });
+        return Object.entries(agg).map(([label, value], i) => ({
+            label, value,
+            display: fmtMoney(value, state.business.moneda),
+            color: CHART_COLORS[i % CHART_COLORS.length]
+        }));
+    }, [ventas, state.business.moneda]);
+
+    // Hora del día con más ventas
+    const ventasPorHora = React.useMemo(() => {
+        const horas = new Array(24).fill(0);
+        ventas.forEach(v => {
+            const fecha = new Date(v.fecha || 0);
+            const h = fecha.getHours();
+            if (h >= 0 && h < 24) horas[h] += Number(v.total || 0);
+        });
+        return horas.map((total, i) => ({
+            label: `${i}h`,
+            value: total,
+            color: '#63f1cb'
+        })).filter((_, i) => i >= 8 && i <= 23); // 8am-11pm
+    }, [ventas]);
+
+    // Día de la semana
+    const ventasPorDia = React.useMemo(() => {
+        const dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+        const totals = new Array(7).fill(0);
+        ventas.forEach(v => {
+            const d = new Date(v.fecha || 0).getDay();
+            totals[d] += Number(v.total || 0);
+        });
+        return totals.map((total, i) => ({
+            label: dias[i],
+            value: total,
+            display: fmtMoney(total, state.business.moneda),
+            color: CHART_COLORS[i % CHART_COLORS.length]
+        }));
+    }, [ventas, state.business.moneda]);
+
     return (
         <div>
-            <PageHeader icon={BarChart3} title={t('pages.analytics.title')} subtitle="Tráfico web (GA4)" help={SECTION_HELP.analytics} />
-            {!hasGA ? (
-                <ComingSoonCard
-                    icon={BarChart3}
-                    title="Conectá Google Analytics 4"
-                    description="Sesiones, usuarios, conversiones y orígenes de tráfico."
-                    steps={['Creá propiedad GA4', 'Copiá Measurement ID (G-XXXXXXXXXX)', 'Pegalo en Configuración']}
-                    onNavigate={() => onNavigate?.('settings')}
+            <PageHeader icon={BarChart3} title="Analytics" subtitle="Métricas avanzadas del negocio" help={SECTION_HELP.analytics} />
+
+            <div style={{ marginBottom: 16 }}>
+                <DateRangeFilter value={range} onChange={setRange} />
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                    📅 {describeDateRange(range)} · {ventas.length} ventas · {gastos.length} gastos
+                </div>
+            </div>
+
+            <div className="kpi-grid mb-4">
+                <KpiCard icon={<DollarSign size={20} />} label="Ingresos" value={fmtMoney(totalVentas, state.business.moneda)} color="#22c55e" />
+                <KpiCard icon={<Receipt size={20} />} label="Egresos" value={fmtMoney(totalGastos, state.business.moneda)} color="#ef4444" />
+                <KpiCard
+                    icon={<TrendingUp size={20} />}
+                    label="Margen bruto"
+                    value={fmtMoney(margen, state.business.moneda)}
+                    color={margen >= 0 ? '#63f1cb' : '#ef4444'}
+                    hint={`${margenPct.toFixed(1)}% de los ingresos`}
                 />
-            ) : (
-                <Card><EmptyState icon={BarChart3} title="GA4 conectado ✓" description={`ID: ${state.integraciones.googleAnalyticsId}`} /></Card>
+                <KpiCard
+                    icon={<ShoppingCart size={20} />}
+                    label="Ticket promedio"
+                    value={fmtMoney(ventas.length > 0 ? totalVentas / ventas.length : 0, state.business.moneda)}
+                    color="#a78bfa"
+                />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
+                {topClientes.length > 0 && (
+                    <Card title="👥 Top 10 clientes" subtitle="Por facturación">
+                        <BarChart data={topClientes} />
+                    </Card>
+                )}
+                {topProductos.length > 0 && (
+                    <Card title="📦 Top 10 productos" subtitle="Más vendidos">
+                        <BarChart data={topProductos} />
+                    </Card>
+                )}
+                {gastosPorCat.length > 0 && (
+                    <Card title="💸 Gastos por categoría">
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 180px', gap: 16, alignItems: 'center' }}>
+                            <BarChart data={gastosPorCat} />
+                            <div style={{ textAlign: 'center' }}>
+                                <PieChart data={gastosPorCat} size={150} />
+                            </div>
+                        </div>
+                    </Card>
+                )}
+                {metodosPago.length > 0 && (
+                    <Card title="💳 Métodos de pago">
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 180px', gap: 16, alignItems: 'center' }}>
+                            <BarChart data={metodosPago} />
+                            <div style={{ textAlign: 'center' }}>
+                                <PieChart data={metodosPago} size={150} />
+                            </div>
+                        </div>
+                    </Card>
+                )}
+                {ventasPorDia.some(d => d.value > 0) && (
+                    <Card title="📅 Ventas por día de semana" subtitle="¿Qué día vendés más?">
+                        <BarChart data={ventasPorDia} />
+                    </Card>
+                )}
+                {ventasPorHora.some(h => h.value > 0) && (
+                    <Card title="🕐 Ventas por hora del día" subtitle="Horario de mayor actividad (8am-11pm)">
+                        <BarChart data={ventasPorHora} />
+                    </Card>
+                )}
+            </div>
+
+            {ventas.length === 0 && gastos.length === 0 && (
+                <Card>
+                    <EmptyState
+                        icon={BarChart3}
+                        title="Sin datos para analizar"
+                        description="Cargá ventas y gastos para ver métricas avanzadas acá."
+                        tips={[
+                            'Top 10 clientes por facturación',
+                            'Productos más vendidos',
+                            'Gastos por categoría',
+                            'Horarios de mayor venta'
+                        ]}
+                    />
+                </Card>
             )}
         </div>
     );

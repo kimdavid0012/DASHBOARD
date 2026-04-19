@@ -248,6 +248,76 @@ export function DataProvider({ children }) {
         };
     }, [hydrated, state.business?.name, state.reservas]);
 
+    // ───── AUTO-GENERAR GASTOS RECURRENTES ─────
+    // Para cada gasto marcado con recurrente=true, verifica si corresponde
+    // crear la siguiente ocurrencia (mensual/semanal/etc).
+    // Se ejecuta al montar y una vez al día.
+    useEffect(() => {
+        if (!hydrated) return;
+
+        const generateRecurring = () => {
+            try {
+                const recurrentes = (state.gastos || []).filter(g =>
+                    g.recurrente && !g.generadoPor
+                );
+                const ahora = new Date();
+                const nuevos = [];
+
+                for (const origen of recurrentes) {
+                    // Contar cuántas ocurrencias ya existen de este origen
+                    const ocurrencias = (state.gastos || []).filter(g =>
+                        g.id === origen.id || g.generadoPor === origen.id
+                    );
+                    // Ordenar por fecha, obtener la última generada
+                    const ultima = ocurrencias
+                        .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))[0];
+                    const fechaUltima = new Date(ultima.fecha || origen.fecha);
+
+                    // Cuándo corresponde la próxima
+                    const proxima = new Date(fechaUltima);
+                    switch (origen.frecuencia || 'mensual') {
+                        case 'semanal': proxima.setDate(proxima.getDate() + 7); break;
+                        case 'quincenal': proxima.setDate(proxima.getDate() + 15); break;
+                        case 'mensual': proxima.setMonth(proxima.getMonth() + 1); break;
+                        case 'anual': proxima.setFullYear(proxima.getFullYear() + 1); break;
+                    }
+
+                    // Si la próxima es <= hoy, generarla
+                    while (proxima <= ahora) {
+                        nuevos.push({
+                            ...origen,
+                            id: undefined, // el reducer asigna uno nuevo
+                            fecha: proxima.toISOString().slice(0, 10),
+                            recurrente: false, // solo el "padre" queda marcado
+                            generadoPor: origen.id, // trazabilidad
+                            notas: (origen.notas || '') + ' (auto-generado recurrente)'
+                        });
+                        // Loop para generar múltiples ocurrencias si el usuario no abrió el dashboard en meses
+                        switch (origen.frecuencia || 'mensual') {
+                            case 'semanal': proxima.setDate(proxima.getDate() + 7); break;
+                            case 'quincenal': proxima.setDate(proxima.getDate() + 15); break;
+                            case 'mensual': proxima.setMonth(proxima.getMonth() + 1); break;
+                            case 'anual': proxima.setFullYear(proxima.getFullYear() + 1); break;
+                        }
+                        if (nuevos.length > 50) break; // safety
+                    }
+                }
+
+                if (nuevos.length > 0) {
+                    dispatch({ type: 'BULK_ADD', payload: { collection: 'gastos', items: nuevos } });
+                    console.log(`[recurrentes] ${nuevos.length} gasto(s) recurrente(s) generados`);
+                }
+            } catch (err) {
+                console.warn('Error generando gastos recurrentes:', err);
+            }
+        };
+
+        generateRecurring();
+        // Re-check cada 6 horas (por si dejan el tab abierto cruzando fin de mes)
+        const interval = setInterval(generateRecurring, 6 * 60 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, [hydrated]);
+
     const actions = {
         updateBusiness: (patch) => dispatch({ type: 'UPDATE_BUSINESS', payload: patch }),
         updateIntegraciones: (patch) => dispatch({ type: 'UPDATE_INTEGRACIONES', payload: patch }),
