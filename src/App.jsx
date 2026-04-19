@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Home, BarChart3, Store, UserCog, Users, UserCheck, CheckSquare,
     ShoppingCart, Receipt, ShoppingBag, PiggyBank, ArrowRightLeft,
     DollarSign, Landmark, Truck, Users2, Megaphone, Bot,
     Instagram, Music2, Globe, Settings as SettingsIcon,
     Armchair, CalendarClock, RotateCcw, FileText, Upload, Shield,
-    CheckCircle2, AlertCircle, RefreshCw
+    CheckCircle2, AlertCircle, RefreshCw, Cloud, CloudOff, User
 } from 'lucide-react';
 import { DataProvider, useData, getRubroLabels, getRubroConfig, shouldShowSection } from './store/DataContext';
+import { AuthProvider, useAuth } from './store/AuthContext';
 import DashboardHome from './pages/DashboardHome';
 import InformesPage from './pages/InformesPage';
 import SucursalesPage from './pages/SucursalesPage';
@@ -21,6 +22,7 @@ import SettingsPage from './pages/SettingsPage';
 import AfipPage from './pages/AfipPage';
 import DataImportPage from './pages/DataImportPage';
 import BackupPage from './pages/BackupPage';
+import AccountPage from './pages/AccountPage';
 import { ClientesPage, GastosPage, CajaDiariaPage, TransferenciasPage, AsistenciaPage, PedidosPage } from './pages/CrudPages';
 import { MarketingPage, AgentsPage, InstagramPage, TikTokPage, AnalyticsPage, WebPage, BankingPage, TareasPage } from './pages/StubPages';
 import { MesasPage, ReservasPage } from './pages/RestaurantPages';
@@ -36,43 +38,112 @@ const RUBRO_EMOJI = {
 function SaveIndicator() {
     const { saveStatus } = useData();
     if (!saveStatus) return null;
-
     const { saving, lastSaved, lastError, source } = saveStatus;
 
-    if (saving) {
-        return (
-            <div className="save-indicator saving">
-                <RefreshCw size={12} className="spin" />
-                <span>Guardando…</span>
-            </div>
-        );
-    }
-    if (lastError) {
-        return (
-            <div className="save-indicator error" title={lastError}>
-                <AlertCircle size={12} />
-                <span>Error al guardar</span>
-            </div>
-        );
-    }
+    if (saving) return <div className="save-indicator saving"><RefreshCw size={12} className="spin" /><span>Guardando…</span></div>;
+    if (lastError) return <div className="save-indicator error" title={lastError}><AlertCircle size={12} /><span>Error</span></div>;
     if (lastSaved) {
         const secs = Math.floor((Date.now() - new Date(lastSaved).getTime()) / 1000);
         const ago = secs < 60 ? `${secs}s` : secs < 3600 ? `${Math.floor(secs / 60)}m` : `${Math.floor(secs / 3600)}h`;
-        return (
-            <div className="save-indicator ok" title={`Guardado hace ${ago} en ${source}`}>
-                <CheckCircle2 size={12} />
-                <span>✓ Guardado</span>
-            </div>
-        );
+        return <div className="save-indicator ok" title={`Guardado hace ${ago} en ${source}`}><CheckCircle2 size={12} /><span>✓ Local</span></div>;
     }
+    return null;
+}
+
+// ── Cloud sync indicator (solo si está en modo cloud) ────────────
+function CloudSyncIndicator({ onNavigate }) {
+    const { isCloud, syncStatus } = useAuth();
+    if (!isCloud) return null;
+
+    const { syncing, lastSyncAt, error } = syncStatus;
+    return (
+        <div
+            className={`save-indicator ${error ? 'error' : syncing ? 'saving' : 'ok'}`}
+            onClick={() => onNavigate?.('account')}
+            style={{ cursor: 'pointer' }}
+            title="Click para ver estado de sync"
+        >
+            {syncing ? <RefreshCw size={12} className="spin" /> : error ? <AlertCircle size={12} /> : <Cloud size={12} />}
+            <span>{syncing ? 'Sync...' : error ? 'Sync fallo' : lastSyncAt ? '☁️ Cloud' : 'Cloud pendiente'}</span>
+        </div>
+    );
+}
+
+// ── Cloud Sync Engine Bridge (usa hooks, dispara en modo cloud) ──
+function CloudSyncBridge() {
+    const { isCloud, user, setSyncStatus } = useAuth();
+    const { state, actions } = useData();
+    const syncRef = useRef(null);
+    const stateRef = useRef(state);
+
+    // Keep latest state available to sync engine
+    useEffect(() => { stateRef.current = state; }, [state]);
+
+    useEffect(() => {
+        if (!isCloud || !user) {
+            if (syncRef.current) {
+                syncRef.current.stop?.();
+                syncRef.current = null;
+            }
+            return;
+        }
+
+        // Arrancar sync engine
+        let cancelled = false;
+        (async () => {
+            try {
+                const { startSyncEngine, reconcileOnLogin } = await import('./utils/syncEngine');
+
+                // 1) Al entrar a cloud, reconciliar con Drive
+                setSyncStatus(s => ({ ...s, syncing: true, error: null }));
+                const reconcile = await reconcileOnLogin(stateRef.current);
+                if (cancelled) return;
+
+                if (reconcile.source === 'drive' && reconcile.state) {
+                    const ok = confirm(
+                        '☁️ Encontré datos más recientes en tu Google Drive\n\n' +
+                        `Subidos: ${new Date(reconcile.remoteSaved).toLocaleString('es-AR')}\n\n` +
+                        '¿Querés traer esa versión?\n\n' +
+                        '(Cancelar = mantenés lo de este dispositivo y sobrescribís Drive)'
+                    );
+                    if (ok) {
+                        actions.hydrate(reconcile.state);
+                    }
+                }
+
+                // 2) Arrancar sync periódico
+                syncRef.current = startSyncEngine({
+                    getState: () => stateRef.current,
+                    onSyncStart: () => setSyncStatus(s => ({ ...s, syncing: true, error: null })),
+                    onSyncSuccess: ({ lastSyncAt }) => setSyncStatus(s => ({
+                        ...s, syncing: false, lastSyncAt, error: null, pendingChanges: false
+                    })),
+                    onSyncError: (err) => setSyncStatus(s => ({ ...s, syncing: false, error: err.message }))
+                });
+            } catch (err) {
+                console.error('Sync engine failed:', err);
+                setSyncStatus(s => ({ ...s, syncing: false, error: err.message }));
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+            if (syncRef.current) {
+                syncRef.current.stop?.();
+                syncRef.current = null;
+            }
+        };
+    }, [isCloud, user?.uid]);
+
     return null;
 }
 
 function AppContent() {
     const { state, actions, hydrated } = useData();
+    const { isCloud, user, mode } = useAuth();
     const [page, setPage] = useState('home');
 
-    if (!hydrated) {
+    if (!hydrated || mode === 'loading') {
         return (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: 16 }}>
                 <div style={{
@@ -156,7 +227,8 @@ function AppContent() {
             label: 'Datos & Sistema',
             items: [
                 { id: 'import', icon: Upload, label: 'Importar Excel' },
-                { id: 'backup', icon: Shield, label: 'Backup & Seguridad', highlight: true },
+                { id: 'backup', icon: Shield, label: 'Backup & Seguridad' },
+                { id: 'account', icon: isCloud ? Cloud : User, label: isCloud ? 'Cuenta · Cloud' : 'Cuenta · Offline', highlight: isCloud },
                 { id: 'settings', icon: SettingsIcon, label: 'Configuración' }
             ]
         }
@@ -200,6 +272,7 @@ function AppContent() {
             case 'web': return <WebPage onNavigate={setPage} />;
             case 'import': return <DataImportPage />;
             case 'backup': return <BackupPage />;
+            case 'account': return <AccountPage />;
             case 'settings': return <SettingsPage />;
             default: return <DashboardHome onNavigate={setPage} />;
         }
@@ -220,6 +293,7 @@ function AppContent() {
 
     return (
         <div className="app">
+            <CloudSyncBridge />
             <aside className="sidebar">
                 <div className="sidebar-brand">
                     <div className="sidebar-brand-logo">D</div>
@@ -255,6 +329,17 @@ function AppContent() {
                         <span>{RUBRO_EMOJI[state.business.rubro] || '🏬'}</span>
                         <span>{rubroName}</span>
                     </div>
+                    {isCloud && user && (
+                        <div style={{ marginTop: 8, padding: 8, background: 'var(--accent-soft)', borderRadius: 8, border: '1px solid var(--border-accent)' }}>
+                            <div className="flex items-center gap-2">
+                                {user.photoURL && <img src={user.photoURL} alt="" style={{ width: 22, height: 22, borderRadius: '50%' }} />}
+                                <div style={{ flex: 1, overflow: 'hidden' }}>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>{user.displayName || user.email}</div>
+                                    <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Sync con Drive ●</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     <button
                         className="sidebar-reconfigure"
                         onClick={handleReconfigure}
@@ -273,6 +358,7 @@ function AppContent() {
                     </div>
                     <div className="topbar-right">
                         <SaveIndicator />
+                        <CloudSyncIndicator onNavigate={setPage} />
                         {state.sucursales.length > 0 && (
                             <div className="sucursal-switcher">
                                 <Store size={14} style={{ color: 'var(--text-muted)' }} />
@@ -301,7 +387,9 @@ function AppContent() {
 export default function App() {
     return (
         <DataProvider>
-            <AppContent />
+            <AuthProvider>
+                <AppContent />
+            </AuthProvider>
         </DataProvider>
     );
 }

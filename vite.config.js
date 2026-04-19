@@ -7,6 +7,7 @@ export default defineConfig({
         rollupOptions: {
             output: {
                 manualChunks: (id) => {
+                    if (id.includes('node_modules/firebase')) return 'firebase-vendor';
                     if (id.includes('node_modules/exceljs')) return 'exceljs-vendor';
                     if (id.includes('node_modules/lucide-react')) return 'lucide-vendor';
                     if (id.includes('node_modules/react')) return 'react-vendor';
