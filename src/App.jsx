@@ -5,7 +5,8 @@ import {
     DollarSign, Landmark, Truck, Users2, Megaphone, Bot,
     Instagram, Music2, Globe, Settings as SettingsIcon,
     Armchair, CalendarClock, RotateCcw, FileText, Upload, Shield,
-    CheckCircle2, AlertCircle, RefreshCw, Cloud, CloudOff, User
+    CheckCircle2, AlertCircle, RefreshCw, Cloud, CloudOff, User,
+    Menu, X as XIcon
 } from 'lucide-react';
 import { DataProvider, useData, getRubroConfig, shouldShowSection } from './store/DataContext';
 import { AuthProvider, useAuth } from './store/AuthContext';
@@ -145,6 +146,19 @@ function AppContent() {
     const { isCloud, user, mode } = useAuth();
     const t = useT();
     const [page, setPage] = useState('home');
+    const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+    // Close mobile nav on page change
+    useEffect(() => {
+        setMobileNavOpen(false);
+    }, [page]);
+
+    // Close mobile nav on escape key
+    useEffect(() => {
+        const onKey = (e) => { if (e.key === 'Escape') setMobileNavOpen(false); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
 
     if (!hydrated || mode === 'loading') {
         return (
@@ -292,9 +306,24 @@ function AppContent() {
     };
 
     return (
-        <div className="app">
+        <div className={`app ${mobileNavOpen ? 'mobile-nav-open' : ''}`}>
             <CloudSyncBridge />
-            <aside className="sidebar">
+
+            {/* Mobile backdrop - blocks clicks when drawer open */}
+            <div
+                className="mobile-nav-backdrop"
+                onClick={() => setMobileNavOpen(false)}
+                aria-hidden="true"
+            />
+
+            <aside className="sidebar" aria-label="Navigation">
+                <button
+                    className="sidebar-close-mobile"
+                    onClick={() => setMobileNavOpen(false)}
+                    aria-label="Close navigation"
+                >
+                    <XIcon size={20} />
+                </button>
                 <div className="sidebar-brand">
                     <div className="sidebar-brand-logo">D</div>
                     <div className="sidebar-brand-text">
@@ -354,6 +383,13 @@ function AppContent() {
             <div className="main">
                 <div className="topbar">
                     <div className="topbar-left">
+                        <button
+                            className="topbar-menu-btn"
+                            onClick={() => setMobileNavOpen(true)}
+                            aria-label="Open navigation"
+                        >
+                            <Menu size={20} />
+                        </button>
                         <div className="topbar-title">{currentPageLabel}</div>
                     </div>
                     <div className="topbar-right">
