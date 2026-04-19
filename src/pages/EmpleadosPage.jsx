@@ -61,7 +61,7 @@ export default function EmpleadosPage() {
             />
 
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<Users size={20} />} label="Empleados" value={visibles.length} color="#14b8a6" />
+                <KpiCard icon={<Users size={20} />} label="Empleados" value={visibles.length} color="#63f1cb" />
                 <KpiCard icon={<Users size={20} />} label="Activos" value={visibles.filter(e => e.activo !== false).length} color="#22c55e" />
                 <KpiCard icon={<DollarSign size={20} />} label="Sueldos base/mes" value={fmtMoney(sueldosMes, state.business.moneda)} color="#f59e0b" hint="Suma de sueldos base mensuales" />
                 <KpiCard icon={<Users size={20} />} label="Sucursales con staff" value={new Set(visibles.map(e => e.sucursalId).filter(Boolean)).size} color="#a855f7" />

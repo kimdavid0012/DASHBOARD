@@ -126,15 +126,15 @@ export default function InformesPage() {
             </div>
 
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<TrendingUp size={20} />} label={`${labels.sales} (período)`} value={fmtMoney(totalVentas, state.business.moneda)} color="#14b8a6" />
-                <KpiCard icon={<TrendingUp size={20} />} label="Operaciones" value={ventas.length} color="#0ea5e9" />
+                <KpiCard icon={<TrendingUp size={20} />} label={`${labels.sales} (período)`} value={fmtMoney(totalVentas, state.business.moneda)} color="#63f1cb" />
+                <KpiCard icon={<TrendingUp size={20} />} label="Operaciones" value={ventas.length} color="#60a5fa" />
                 <KpiCard icon={<DollarSign size={20} />} label="Gastos (período)" value={fmtMoney(totalGastos, state.business.moneda)} color="#ef4444" />
                 <KpiCard icon={<DollarSign size={20} />} label="Margen (V − G)" value={fmtMoney(margen, state.business.moneda)} color={margen >= 0 ? '#22c55e' : '#ef4444'} />
             </div>
 
             {tab === 'general' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
-                    <Card title="Evolución de ventas"><LineChart series={[{ data: serieVentas.map(d => d.total), color: '#14b8a6' }]} labels={serieVentas.map(d => d.label).filter((_, i, arr) => i % Math.ceil(arr.length / 7) === 0)} /></Card>
+                    <Card title="Evolución de ventas"><LineChart series={[{ data: serieVentas.map(d => d.total), color: '#63f1cb' }]} labels={serieVentas.map(d => d.label).filter((_, i, arr) => i % Math.ceil(arr.length / 7) === 0)} /></Card>
                     <Card title="Ventas por método"><BarChart data={metodoVentas.map(m => ({ ...m, display: fmtMoney(m.value, state.business.moneda) }))} /></Card>
                 </div>
             )}

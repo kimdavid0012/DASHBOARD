@@ -34,7 +34,7 @@ export function ClientesPage() {
                 actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setEditId(null); setOpen(true); }}><Plus size={14} /> Nuevo {labels.client.toLowerCase()}</button>}
             />
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<Users2 size={20} />} label={labels.clients} value={state.clientes.length} color="#14b8a6" />
+                <KpiCard icon={<Users2 size={20} />} label={labels.clients} value={state.clientes.length} color="#63f1cb" />
                 <KpiCard icon={<Users2 size={20} />} label="Con histórico" value={state.clientes.filter(c => state.ventas.some(v => v.clienteId === c.id)).length} color="#22c55e" />
             </div>
             <Card>
@@ -131,7 +131,7 @@ export function GastosPage() {
                 actions={<button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}><Plus size={14} /> Nuevo gasto</button>}
             />
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<Receipt size={20} />} label="Gastos totales" value={gastos.length} color="#14b8a6" />
+                <KpiCard icon={<Receipt size={20} />} label="Gastos totales" value={gastos.length} color="#63f1cb" />
                 <KpiCard icon={<Receipt size={20} />} label="Gastado este mes" value={fmtMoney(totalMes, state.business.moneda)} color="#ef4444" />
                 <KpiCard icon={<Receipt size={20} />} label="Total histórico" value={fmtMoney(gastos.reduce((s, g) => s + Number(g.monto || 0), 0), state.business.moneda)} color="#f59e0b" />
             </div>
@@ -466,9 +466,9 @@ export function PedidosPage() {
                 actions={<button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}><Plus size={14} /> Nuevo pedido</button>}
             />
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<ShoppingBag size={20} />} label="Pedidos totales" value={pedidos.length} color="#14b8a6" />
+                <KpiCard icon={<ShoppingBag size={20} />} label="Pedidos totales" value={pedidos.length} color="#63f1cb" />
                 <KpiCard icon={<ShoppingBag size={20} />} label="Pendientes" value={pedidos.filter(p => p.estado === 'pendiente').length} color="#f59e0b" />
-                <KpiCard icon={<ShoppingBag size={20} />} label="En curso" value={pedidos.filter(p => ['preparando', 'enviado'].includes(p.estado)).length} color="#0ea5e9" />
+                <KpiCard icon={<ShoppingBag size={20} />} label="En curso" value={pedidos.filter(p => ['preparando', 'enviado'].includes(p.estado)).length} color="#60a5fa" />
                 <KpiCard icon={<ShoppingBag size={20} />} label="Entregados" value={pedidos.filter(p => p.estado === 'entregado').length} color="#22c55e" />
             </div>
             <Card>

@@ -105,6 +105,7 @@ export function DataProvider({ children }) {
         updateIntegraciones: (patch) => dispatch({ type: 'UPDATE_INTEGRACIONES', payload: patch }),
         setCurrentSucursal: (id) => dispatch({ type: 'SET_CURRENT_SUCURSAL', payload: id }),
         markOnboarded: () => dispatch({ type: 'UPDATE_META', payload: { onboarded: true } }),
+        resetOnboarding: () => dispatch({ type: 'UPDATE_META', payload: { onboarded: false } }),
         reset: () => dispatch({ type: 'RESET' }),
         add: (collection, item) => dispatch({ type: 'ADD_ITEM', payload: { collection, item } }),
         update: (collection, id, patch) => dispatch({ type: 'UPDATE_ITEM', payload: { collection, id, patch } }),
@@ -135,6 +136,7 @@ export function filterBySucursal(items, currentSucursalId, field = 'sucursalId')
 // ═══════════════════════════════════════════════════════════════════
 const RUBRO_CONFIG = {
     general: {
+        productEmoji: '📦',
         labels: {
             item: 'Producto', items: 'Productos', itemPlural: 'productos',
             sale: 'Venta', sales: 'Ventas',
@@ -148,6 +150,7 @@ const RUBRO_CONFIG = {
         defaultCategorias: ['General', 'Destacados', 'Promociones']
     },
     kiosco: {
+        productEmoji: '🍬',
         labels: {
             item: 'Producto', items: 'Productos', itemPlural: 'productos',
             sale: 'Venta', sales: 'Ventas',
@@ -161,6 +164,7 @@ const RUBRO_CONFIG = {
         defaultCategorias: ['Golosinas', 'Cigarrillos', 'Bebidas', 'Galletitas', 'Lácteos', 'Fiambres', 'Panificados', 'Limpieza', 'Almacén', 'Revistas']
     },
     restaurante: {
+        productEmoji: '🍽️',
         labels: {
             item: 'Plato / Bebida', items: 'Menú', itemPlural: 'items del menú',
             sale: 'Comanda', sales: 'Comandas',
@@ -174,6 +178,7 @@ const RUBRO_CONFIG = {
         defaultCategorias: ['Entradas', 'Principales', 'Pastas', 'Carnes', 'Pescados', 'Ensaladas', 'Postres', 'Bebidas', 'Vinos', 'Cafetería']
     },
     accesorios: {
+        productEmoji: '✨',
         labels: {
             item: 'Accesorio', items: 'Accesorios', itemPlural: 'accesorios',
             sale: 'Venta', sales: 'Ventas',
@@ -187,6 +192,7 @@ const RUBRO_CONFIG = {
         defaultCategorias: ['Aros', 'Collares', 'Pulseras', 'Anillos', 'Bolsos', 'Carteras', 'Cinturones', 'Bijouterie', 'Ropa', 'Calzado']
     },
     servicios: {
+        productEmoji: '💼',
         labels: {
             item: 'Servicio', items: 'Servicios', itemPlural: 'servicios',
             sale: 'Reserva / Pago', sales: 'Reservas y pagos',
@@ -200,6 +206,7 @@ const RUBRO_CONFIG = {
         defaultCategorias: ['Consultoría', 'Clases', 'Sesiones', 'Asesoría', 'Mantenimiento']
     },
     otro: {
+        productEmoji: '📦',
         labels: {
             item: 'Item', items: 'Items', itemPlural: 'items',
             sale: 'Venta', sales: 'Ventas',

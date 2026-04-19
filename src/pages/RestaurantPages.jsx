@@ -42,7 +42,7 @@ export function MesasPage() {
             />
 
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<Armchair size={20} />} label="Mesas totales" value={mesas.length} color="#14b8a6" />
+                <KpiCard icon={<Armchair size={20} />} label="Mesas totales" value={mesas.length} color="#63f1cb" />
                 <KpiCard icon={<CheckCircle size={20} />} label="Libres" value={mesas.filter(m => m.estado === 'libre').length} color="#22c55e" />
                 <KpiCard icon={<Users size={20} />} label="Ocupadas" value={mesas.filter(m => m.estado === 'ocupada').length} color="#f59e0b" />
                 <KpiCard icon={<XCircle size={20} />} label="Reservadas" value={mesas.filter(m => m.estado === 'reservada').length} color="#a855f7" />
@@ -175,9 +175,9 @@ export function ReservasPage() {
             />
 
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<CalendarClock size={20} />} label="Reservas totales" value={reservas.length} color="#14b8a6" />
+                <KpiCard icon={<CalendarClock size={20} />} label="Reservas totales" value={reservas.length} color="#63f1cb" />
                 <KpiCard icon={<Clock size={20} />} label="Para hoy" value={reservasHoy.length} color="#f59e0b" />
-                <KpiCard icon={<CalendarClock size={20} />} label="Próximas" value={proximas} color="#0ea5e9" />
+                <KpiCard icon={<CalendarClock size={20} />} label="Próximas" value={proximas} color="#60a5fa" />
                 <KpiCard icon={<Users size={20} />} label="Personas hoy" value={reservasHoy.reduce((s, r) => s + Number(r.personas || 0), 0)} color="#a855f7" />
             </div>
 

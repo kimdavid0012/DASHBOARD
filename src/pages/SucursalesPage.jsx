@@ -52,9 +52,9 @@ export default function SucursalesPage() {
             />
 
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<Store size={20} />} label="Sucursales totales" value={sucursales.length} color="#14b8a6" />
+                <KpiCard icon={<Store size={20} />} label="Sucursales totales" value={sucursales.length} color="#63f1cb" />
                 <KpiCard icon={<Store size={20} />} label="Activas" value={sucursales.filter(s => s.activa).length} color="#22c55e" />
-                <KpiCard icon={<UserIcon size={20} />} label="Empleados totales" value={state.empleados.length} color="#0ea5e9" />
+                <KpiCard icon={<UserIcon size={20} />} label="Empleados totales" value={state.empleados.length} color="#60a5fa" />
                 <KpiCard icon={<MapPin size={20} />} label="Ciudades cubiertas" value={new Set(sucursales.map(s => s.ciudad).filter(Boolean)).size} color="#a855f7" />
             </div>
 

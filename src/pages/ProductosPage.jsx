@@ -68,7 +68,7 @@ export default function ProductosPage() {
             />
 
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<Package size={20} />} label={`Total ${labels.items}`} value={stats.total} color="#14b8a6" />
+                <KpiCard icon={<Package size={20} />} label={`Total ${labels.items}`} value={stats.total} color="#63f1cb" />
                 <KpiCard icon={<TrendingUp size={20} />} label="Activos" value={stats.activos} color="#22c55e" />
                 <KpiCard icon={<AlertTriangle size={20} />} label="Stock bajo" value={stats.stockBajo} color="#f59e0b" hint="Productos con stock debajo del mínimo" />
                 <KpiCard icon={<Archive size={20} />} label="Sin stock" value={stats.sinStock} color="#ef4444" />

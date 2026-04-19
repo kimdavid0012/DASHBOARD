@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, Store, Sparkles } from 'lucide-react';
+import { ArrowRight, Store, Sparkles, RefreshCw } from 'lucide-react';
 import { useData } from '../store/DataContext';
 
 const RUBROS = [
@@ -12,13 +12,17 @@ const RUBROS = [
 ];
 
 export default function OnboardingModal() {
-    const { actions } = useData();
+    const { state, actions } = useData();
+
+    // Detect reconfiguration mode: user already has data from a previous setup
+    const isReconfiguring = !!(state.business.name || state.sucursales.length > 0);
+
     const [step, setStep] = useState(1);
     const [business, setBusiness] = useState({
-        name: '',
-        rubro: '',
-        moneda: 'ARS',
-        pais: 'Argentina'
+        name: state.business.name || '',
+        rubro: state.business.rubro || '',
+        moneda: state.business.moneda || 'ARS',
+        pais: state.business.pais || 'Argentina'
     });
     const [sucursal, setSucursal] = useState({
         nombre: 'Sucursal principal',
@@ -29,12 +33,24 @@ export default function OnboardingModal() {
     });
 
     const canStep1 = business.name.trim() && business.rubro;
+    const skipStep2 = isReconfiguring && state.sucursales.length > 0;
 
     const finish = () => {
-        actions.updateBusiness({ ...business, createdAt: new Date().toISOString() });
-        if (sucursal.nombre.trim()) {
+        actions.updateBusiness({
+            ...business,
+            createdAt: state.business.createdAt || new Date().toISOString()
+        });
+        if (!skipStep2 && sucursal.nombre.trim()) {
             actions.add('sucursales', sucursal);
         }
+        actions.markOnboarded();
+    };
+
+    const finishReconfigureOnly = () => {
+        actions.updateBusiness({
+            ...business,
+            createdAt: state.business.createdAt || new Date().toISOString()
+        });
         actions.markOnboarded();
     };
 
@@ -43,18 +59,40 @@ export default function OnboardingModal() {
             <div className="modal" style={{ maxWidth: 720 }}>
                 <div className="flex items-center gap-2 mb-4">
                     <div style={{
-                        width: 40, height: 40, borderRadius: 10,
-                        background: 'linear-gradient(135deg, #14b8a6, #0ea5e9)',
+                        width: 44, height: 44, borderRadius: 11,
+                        background: 'linear-gradient(135deg, #63f1cb, #60a5fa)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: '#fff'
+                        color: '#0a0a0f',
+                        boxShadow: '0 4px 14px rgba(99, 241, 203, 0.3)'
                     }}>
-                        <Sparkles size={20} />
+                        {isReconfiguring ? <RefreshCw size={20} /> : <Sparkles size={20} />}
                     </div>
-                    <div>
-                        <h2 className="modal-title" style={{ margin: 0 }}>¡Bienvenido a Dashboard!</h2>
-                        <div className="text-xs text-muted">Configuremos tu negocio en 2 pasos rápidos · Paso {step} de 2</div>
+                    <div style={{ flex: 1 }}>
+                        <h2 className="modal-title" style={{ margin: 0 }}>
+                            {isReconfiguring ? 'Reconfigurar negocio' : '¡Bienvenido a Dashboard!'}
+                        </h2>
+                        <div className="text-xs text-muted" style={{ marginTop: 2 }}>
+                            {isReconfiguring
+                                ? 'Tus datos se mantienen intactos · solo actualizás nombre/rubro'
+                                : `Configuremos tu negocio en ${skipStep2 ? '1 paso' : '2 pasos'} rápidos · Paso ${step} de ${skipStep2 ? 1 : 2}`}
+                        </div>
                     </div>
                 </div>
+
+                {isReconfiguring && (
+                    <div style={{
+                        padding: 12,
+                        background: 'rgba(99, 241, 203, 0.08)',
+                        border: '1px solid var(--border-accent)',
+                        borderRadius: 10,
+                        marginBottom: 16,
+                        fontSize: 13,
+                        lineHeight: 1.5
+                    }}>
+                        💡 <strong>Modo reconfiguración:</strong> tus ventas, productos, empleados y clientes <strong>no se tocan</strong>.
+                        Solo podés cambiar el nombre, rubro y moneda. Si querés crear más sucursales, andá directamente a la sección de Sucursales.
+                    </div>
+                )}
 
                 {step === 1 && (
                     <div>
@@ -88,9 +126,9 @@ export default function OnboardingModal() {
                                             transition: 'all 0.15s'
                                         }}
                                     >
-                                        <div style={{ fontSize: 24, marginBottom: 6 }}>{r.emoji}</div>
+                                        <div style={{ fontSize: 26, marginBottom: 6 }}>{r.emoji}</div>
                                         <div className="font-semibold text-sm">{r.nombre}</div>
-                                        <div className="text-xs text-muted mt-1">{r.desc}</div>
+                                        <div className="text-xs text-muted mt-1" style={{ lineHeight: 1.4 }}>{r.desc}</div>
                                     </button>
                                 ))}
                             </div>
@@ -114,18 +152,20 @@ export default function OnboardingModal() {
                         </div>
 
                         <div className="flex justify-end mt-4">
-                            <button
-                                className="btn btn-primary btn-lg"
-                                disabled={!canStep1}
-                                onClick={() => setStep(2)}
-                            >
-                                Continuar <ArrowRight size={14} />
-                            </button>
+                            {skipStep2 ? (
+                                <button className="btn btn-primary btn-lg" disabled={!canStep1} onClick={finishReconfigureOnly}>
+                                    Guardar cambios <ArrowRight size={14} />
+                                </button>
+                            ) : (
+                                <button className="btn btn-primary btn-lg" disabled={!canStep1} onClick={() => setStep(2)}>
+                                    Continuar <ArrowRight size={14} />
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}
 
-                {step === 2 && (
+                {step === 2 && !skipStep2 && (
                     <div>
                         <div className="flex items-center gap-2 mb-3">
                             <Store size={18} style={{ color: 'var(--accent)' }} />

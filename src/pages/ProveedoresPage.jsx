@@ -64,7 +64,7 @@ export default function ProveedoresPage() {
             />
 
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<Truck size={20} />} label="Proveedores" value={stats.total} color="#14b8a6" />
+                <KpiCard icon={<Truck size={20} />} label="Proveedores" value={stats.total} color="#63f1cb" />
                 <KpiCard icon={<Truck size={20} />} label="Activos" value={stats.activos} color="#22c55e" />
                 <KpiCard icon={<DollarSign size={20} />} label="Deuda total" value={fmtMoney(stats.deudaTotal, state.business.moneda)} color="#ef4444" hint="Suma de deudas pendientes" />
                 <KpiCard icon={<Truck size={20} />} label="Con deuda" value={stats.conDeuda} color="#f59e0b" />

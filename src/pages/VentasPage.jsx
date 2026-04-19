@@ -51,9 +51,9 @@ export default function VentasPage({ onNavigate }) {
             />
 
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<Receipt size={20} />} label={`${labels.sales} (filtro)`} value={stats.count} color="#14b8a6" />
+                <KpiCard icon={<Receipt size={20} />} label={`${labels.sales} (filtro)`} value={stats.count} color="#63f1cb" />
                 <KpiCard icon={<Receipt size={20} />} label="Total facturado" value={fmtMoney(stats.total, state.business.moneda)} color="#22c55e" />
-                <KpiCard icon={<Receipt size={20} />} label="Ticket promedio" value={fmtMoney(stats.ticketProm, state.business.moneda)} color="#0ea5e9" hint="Total / cantidad de operaciones" />
+                <KpiCard icon={<Receipt size={20} />} label="Ticket promedio" value={fmtMoney(stats.ticketProm, state.business.moneda)} color="#60a5fa" hint="Total / cantidad de operaciones" />
             </div>
 
             <Card>

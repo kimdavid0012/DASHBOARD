@@ -3,8 +3,8 @@ import {
     Home, BarChart3, Store, UserCog, Users, UserCheck, CheckSquare,
     ShoppingCart, Receipt, ShoppingBag, PiggyBank, ArrowRightLeft,
     DollarSign, Landmark, Truck, Users2, Megaphone, Bot,
-    Instagram, Music2, Globe, Settings as SettingsIcon, Menu,
-    Armchair, CalendarClock
+    Instagram, Music2, Globe, Settings as SettingsIcon,
+    Armchair, CalendarClock, RotateCcw
 } from 'lucide-react';
 import { DataProvider, useData, getRubroLabels, getRubroConfig, shouldShowSection } from './store/DataContext';
 import DashboardHome from './pages/DashboardHome';
@@ -21,6 +21,16 @@ import { ClientesPage, GastosPage, CajaDiariaPage, TransferenciasPage, Asistenci
 import { MarketingPage, AgentsPage, InstagramPage, TikTokPage, AnalyticsPage, WebPage, BankingPage, TareasPage } from './pages/StubPages';
 import { MesasPage, ReservasPage } from './pages/RestaurantPages';
 import OnboardingModal from './components/OnboardingModal';
+import CelaBot from './components/CelaBot';
+
+const RUBRO_EMOJI = {
+    kiosco: '🏪',
+    restaurante: '🍽️',
+    accesorios: '👗',
+    servicios: '💼',
+    general: '🏬',
+    otro: '✨'
+};
 
 function AppContent() {
     const { state, actions, hydrated } = useData();
@@ -40,7 +50,6 @@ function AppContent() {
         otro: 'Otro'
     }[state.business.rubro] || 'General';
 
-    // NAV structure with rubro-aware visibility
     const allNavGroups = [
         {
             label: 'Principal',
@@ -62,14 +71,14 @@ function AppContent() {
         {
             label: state.business.rubro === 'restaurante' ? 'Salón' : 'Agenda',
             items: [
-                { id: 'mesas', icon: Armchair, label: 'Mesas' },
+                { id: 'mesas', icon: Armchair, label: state.business.rubro === 'restaurante' ? 'Mesas' : 'Espacios' },
                 { id: 'reservas', icon: CalendarClock, label: 'Reservas' }
             ]
         },
         {
             label: 'Operaciones',
             items: [
-                { id: 'productos', icon: () => <span style={{ fontSize: 18 }}>📦</span>, label: labels.items },
+                { id: 'productos', icon: () => <span style={{ fontSize: 18 }}>{rubroConfig.productEmoji || '📦'}</span>, label: labels.items },
                 { id: 'pos', icon: ShoppingCart, label: labels.pos, highlight: true },
                 { id: 'ventas', icon: Receipt, label: `Historial ${labels.sales.toLowerCase()}` },
                 { id: 'pedidos', icon: ShoppingBag, label: labels.orders },
@@ -103,7 +112,6 @@ function AppContent() {
         }
     ];
 
-    // Filter nav by rubro visibility
     const NAV_GROUPS = allNavGroups
         .map(grp => ({
             ...grp,
@@ -111,15 +119,13 @@ function AppContent() {
         }))
         .filter(grp => grp.items.length > 0);
 
-    // Renderer
     const renderPage = () => {
-        // Navigation guard - if rubro hides this section, redirect home
         if (!shouldShowSection(state.business.rubro, page)) {
             setTimeout(() => setPage('home'), 0);
             return null;
         }
         switch (page) {
-            case 'home': return <DashboardHome />;
+            case 'home': return <DashboardHome onNavigate={setPage} />;
             case 'informes': return <InformesPage />;
             case 'sucursales': return <SucursalesPage />;
             case 'usuarios': return <UsuariosPage />;
@@ -145,7 +151,7 @@ function AppContent() {
             case 'analytics': return <AnalyticsPage onNavigate={setPage} />;
             case 'web': return <WebPage onNavigate={setPage} />;
             case 'settings': return <SettingsPage />;
-            default: return <DashboardHome />;
+            default: return <DashboardHome onNavigate={setPage} />;
         }
     };
 
@@ -157,12 +163,20 @@ function AppContent() {
         return 'Inicio';
     })();
 
+    const handleReconfigure = () => {
+        const ok = confirm('¿Querés volver a la pantalla de configuración inicial?\n\n⚠️ No se pierden datos — solo vas a poder cambiar el nombre, rubro y sucursales de tu negocio.');
+        if (ok) actions.resetOnboarding();
+    };
+
     return (
         <div className="app">
             <aside className="sidebar">
                 <div className="sidebar-brand">
                     <div className="sidebar-brand-logo">D</div>
-                    <h1>Dashboard</h1>
+                    <div className="sidebar-brand-text">
+                        <h1>Dashboard</h1>
+                        <div className="sidebar-brand-tagline">Business OS</div>
+                    </div>
                 </div>
                 <nav className="sidebar-nav">
                     {NAV_GROUPS.map(grp => (
@@ -170,12 +184,12 @@ function AppContent() {
                             <div className="sidebar-section-label">{grp.label}</div>
                             {grp.items.map(item => {
                                 const Icon = item.icon;
+                                const isHighlight = item.highlight && page !== item.id;
                                 return (
                                     <button
                                         key={item.id}
-                                        className={`sidebar-item ${page === item.id ? 'active' : ''}`}
+                                        className={`sidebar-item ${page === item.id ? 'active' : ''} ${isHighlight ? 'highlight' : ''}`}
                                         onClick={() => setPage(item.id)}
-                                        style={item.highlight && page !== item.id ? { color: 'var(--accent)', fontWeight: 600 } : {}}
                                     >
                                         <Icon size={18} />
                                         <span>{item.label}</span>
@@ -186,8 +200,19 @@ function AppContent() {
                     ))}
                 </nav>
                 <div className="sidebar-footer">
-                    <div>{state.business.name || 'Dashboard v1'}</div>
-                    <div className="sidebar-rubro-badge">{rubroName}</div>
+                    <div className="sidebar-footer-business">{state.business.name || 'Mi negocio'}</div>
+                    <div className="sidebar-rubro-badge">
+                        <span>{RUBRO_EMOJI[state.business.rubro] || '🏬'}</span>
+                        <span>{rubroName}</span>
+                    </div>
+                    <button
+                        className="sidebar-reconfigure"
+                        onClick={handleReconfigure}
+                        title="Cambiar nombre, rubro o crear sucursales"
+                    >
+                        <RotateCcw size={11} style={{ display: 'inline', marginRight: 6, verticalAlign: -1 }} />
+                        Reconfigurar negocio
+                    </button>
                 </div>
             </aside>
 
@@ -217,6 +242,7 @@ function AppContent() {
             </div>
 
             {showOnboarding && <OnboardingModal />}
+            {!showOnboarding && <CelaBot />}
         </div>
     );
 }

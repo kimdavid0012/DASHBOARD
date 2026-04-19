@@ -94,7 +94,7 @@ export function Field({ label, children, required, hint }) {
     );
 }
 
-export function KpiCard({ icon, label, value, delta, color = '#14b8a6', hint }) {
+export function KpiCard({ icon, label, value, delta, color = '#63f1cb', hint }) {
     return (
         <div className="kpi-card" title={hint || ''}>
             <div className="kpi-icon" style={{ background: `${color}20`, color }}>{icon}</div>
@@ -138,7 +138,7 @@ export function Badge({ children, variant = 'default' }) {
 // Inline info box (sits inline with content, not collapsible)
 export function InfoBox({ icon: Icon = Info, children, variant = 'info' }) {
     const colors = {
-        info: { bg: 'rgba(14,165,233,0.08)', border: 'rgba(14,165,233,0.25)', color: '#0ea5e9' },
+        info: { bg: 'rgba(14,165,233,0.08)', border: 'rgba(14,165,233,0.25)', color: '#60a5fa' },
         warning: { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)', color: '#f59e0b' },
         success: { bg: 'rgba(34,197,94,0.08)', border: 'rgba(34,197,94,0.25)', color: '#22c55e' }
     }[variant];
@@ -271,4 +271,4 @@ export const fmtDate = (iso) => {
     } catch { return iso; }
 };
 
-export const CHART_COLORS = ['#14b8a6', '#0ea5e9', '#f59e0b', '#ef4444', '#a855f7', '#22c55e', '#ec4899', '#64748b', '#eab308', '#84cc16'];
+export const CHART_COLORS = ['#63f1cb', '#60a5fa', '#fbbf24', '#fb7185', '#c084fc', '#4ade80', '#f472b6', '#94a3b8', '#f4c15a', '#a3e635'];

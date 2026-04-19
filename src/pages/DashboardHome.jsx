@@ -1,13 +1,13 @@
 import React, { useMemo } from 'react';
 import {
     TrendingUp, DollarSign, ShoppingCart, Users, Package,
-    AlertTriangle, Store, Home, Calendar
+    AlertTriangle, Store, Home, Calendar, RotateCcw, Settings as SettingsIcon
 } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, KpiCard, EmptyState, BarChart, LineChart, fmtMoney, CHART_COLORS, InfoBox } from '../components/UI';
 
-export default function DashboardHome() {
-    const { state } = useData();
+export default function DashboardHome({ onNavigate }) {
+    const { state, actions } = useData();
     const current = state.meta.currentSucursalId || 'all';
     const labels = getRubroLabels(state.business.rubro);
 
@@ -99,6 +99,26 @@ export default function DashboardHome() {
                 title={`Inicio${state.business.name ? ' — ' + state.business.name : ''}`}
                 subtitle={current === 'all' ? 'Vista consolidada de todas las sucursales' : `Sucursal: ${state.sucursales.find(s => s.id === current)?.nombre}`}
                 help={SECTION_HELP.home}
+                actions={
+                    <>
+                        <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => {
+                                if (confirm('¿Volver a la pantalla de configuración inicial?\n\n⚠️ No se pierden datos — solo podrás actualizar nombre, rubro y moneda del negocio.')) {
+                                    actions.resetOnboarding();
+                                }
+                            }}
+                            title="Reconfigurar nombre, rubro, moneda"
+                        >
+                            <RotateCcw size={13} /> Reconfigurar
+                        </button>
+                        {onNavigate && (
+                            <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('settings')}>
+                                <SettingsIcon size={13} /> Configuración
+                            </button>
+                        )}
+                    </>
+                }
             />
 
             <div className="kpi-grid mb-4">
@@ -107,7 +127,7 @@ export default function DashboardHome() {
                     label={`${labels.sales} hoy`}
                     value={fmtMoney(kpis.totalHoy, state.business.moneda)}
                     delta={{ direction: 'up', text: `${kpis.ventasHoy} operaciones` }}
-                    color="#14b8a6"
+                    color="#63f1cb"
                     hint="Total facturado en el día de hoy"
                 />
                 <KpiCard
@@ -117,7 +137,7 @@ export default function DashboardHome() {
                     delta={{ direction: 'up', text: `${kpis.ventasMes} operaciones` }}
                     color="#22c55e"
                 />
-                <KpiCard icon={<ShoppingCart size={20} />} label={labels.orders} value={pedidos.length} color="#0ea5e9" />
+                <KpiCard icon={<ShoppingCart size={20} />} label={labels.orders} value={pedidos.length} color="#60a5fa" />
                 <KpiCard icon={<Users size={20} />} label={labels.clients} value={clientes.length} color="#a855f7" />
                 <KpiCard icon={<Package size={20} />} label={labels.items} value={productos.length} color="#f59e0b" />
                 <KpiCard
@@ -150,7 +170,7 @@ export default function DashboardHome() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
                     <Card title={`${labels.sales} — últimos 7 días`} subtitle={current === 'all' ? 'Todas las sucursales' : state.sucursales.find(s => s.id === current)?.nombre}>
                         <LineChart
-                            series={[{ data: chartVentas7d.map(d => d.total), color: '#14b8a6' }]}
+                            series={[{ data: chartVentas7d.map(d => d.total), color: '#63f1cb' }]}
                             labels={chartVentas7d.map(d => d.label)}
                         />
                     </Card>
