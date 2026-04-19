@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Settings as SettingsIcon, Download, Upload, Trash2, AlertTriangle, Check, Globe, Mic } from 'lucide-react';
+import { Settings as SettingsIcon, Download, Upload, Trash2, AlertTriangle, Check, Globe, Mic, Printer, Bluetooth, Usb } from 'lucide-react';
 import { useData, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, Field, InfoBox } from '../components/UI';
 import { useT, getLang, setLang, availableLangs } from '../i18n';
 import { ttsIsSupported, sttIsSupported } from '../utils/voice';
+import { TicketPrinter, getPrintingCapabilities } from '../utils/printer';
 
 const RUBROS = [
     { id: 'general', nombre: 'General', desc: 'Cualquier negocio' },
@@ -160,6 +161,9 @@ export default function SettingsPage() {
                     </div>
                 </Card>
 
+                {/* ═══════════ IMPRESORA DE TICKETS 🖨️ ═══════════ */}
+                <PrinterCard t={t} currentLang={currentLang} />
+
                 {/* DATOS DEL NEGOCIO */}
                 <Card title={t('settings.business_data')} subtitle={currentLang === 'ko' ? '기본 정보 및 업종' : currentLang === 'en' ? 'Basic info and industry' : 'Información básica y rubro'}>
                     <div className="form-grid">
@@ -270,5 +274,180 @@ export default function SettingsPage() {
                 </Card>
             </div>
         </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PRINTER CONFIG CARD — test BT/Serial connect + print test
+// ═══════════════════════════════════════════════════════════════════
+function PrinterCard({ t, currentLang }) {
+    const [status, setStatus] = useState('idle'); // idle | connecting | connected | error
+    const [printerInfo, setPrinterInfo] = useState(null);
+    const [error, setError] = useState('');
+    const [testing, setTesting] = useState(false);
+    const caps = getPrintingCapabilities();
+
+    const label = (es, en, ko) => currentLang === 'ko' ? ko : currentLang === 'en' ? en : es;
+
+    const connect = async (type) => {
+        setError('');
+        setStatus('connecting');
+        try {
+            const printer = await TicketPrinter.connect(type);
+            setPrinterInfo({
+                type: printer.type,
+                name: printer.device?.name || (printer.type === 'html' ? 'PDF/Sistema' : 'USB Serial')
+            });
+            setStatus('connected');
+        } catch (err) {
+            setError(err.message);
+            setStatus('error');
+            setTimeout(() => setStatus('idle'), 5000);
+        }
+    };
+
+    const test = async () => {
+        setTesting(true);
+        setError('');
+        try {
+            const printer = TicketPrinter.getPrinter();
+            if (!printer) {
+                setError(label(
+                    'Primero conectá una impresora',
+                    'Connect a printer first',
+                    '먼저 프린터를 연결하세요'
+                ));
+                return;
+            }
+            await printer.testPrint();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setTesting(false);
+        }
+    };
+
+    const disconnect = async () => {
+        await TicketPrinter.disconnect();
+        setPrinterInfo(null);
+        setStatus('idle');
+    };
+
+    return (
+        <Card>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <Printer size={20} style={{ color: 'var(--accent)' }} />
+                <div>
+                    <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500 }}>
+                        🖨️ {label('Impresora de tickets', 'Receipt printer', '영수증 프린터')}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        {label(
+                            'Impresoras 58mm/80mm por Bluetooth o USB (ESC/POS). Fallback PDF para Safari/Firefox.',
+                            '58mm/80mm printers via Bluetooth or USB (ESC/POS). PDF fallback for Safari/Firefox.',
+                            '58mm/80mm 프린터 (블루투스 또는 USB, ESC/POS). Safari/Firefox 는 PDF 대체.'
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Status */}
+            {printerInfo ? (
+                <div style={{
+                    padding: 12,
+                    background: 'var(--accent-soft)',
+                    border: '1px solid var(--border-accent)',
+                    borderRadius: 10,
+                    marginBottom: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10
+                }}>
+                    <Check size={18} style={{ color: 'var(--accent)' }} />
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600 }}>{label('Conectado', 'Connected', '연결됨')}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                            {printerInfo.name} · {printerInfo.type.toUpperCase()}
+                        </div>
+                    </div>
+                    <button className="btn btn-ghost btn-sm" onClick={disconnect}>
+                        {label('Desconectar', 'Disconnect', '연결 해제')}
+                    </button>
+                </div>
+            ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 12 }}>
+                    <button
+                        className="btn btn-primary"
+                        disabled={!caps.bluetooth || status === 'connecting'}
+                        onClick={() => connect('bluetooth')}
+                        title={!caps.bluetooth ? label(
+                            'Bluetooth no disponible en este browser',
+                            'Bluetooth not available in this browser',
+                            '이 브라우저에서 블루투스를 사용할 수 없습니다'
+                        ) : ''}
+                    >
+                        <Bluetooth size={16} /> {label('Conectar BT', 'Connect BT', 'BT 연결')}
+                    </button>
+                    <button
+                        className="btn btn-primary"
+                        disabled={!caps.serial || status === 'connecting'}
+                        onClick={() => connect('serial')}
+                        title={!caps.serial ? label(
+                            'Web Serial no disponible',
+                            'Web Serial not available',
+                            'Web Serial 사용 불가'
+                        ) : ''}
+                    >
+                        <Usb size={16} /> {label('Conectar USB', 'Connect USB', 'USB 연결')}
+                    </button>
+                    <button
+                        className="btn btn-ghost"
+                        onClick={() => connect('html')}
+                        title={label('Usa PDF y la impresora del sistema', 'Uses PDF and system printer', 'PDF 및 시스템 프린터 사용')}
+                    >
+                        <Printer size={16} /> {label('Modo PDF', 'PDF mode', 'PDF 모드')}
+                    </button>
+                </div>
+            )}
+
+            {status === 'connecting' && (
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>
+                    {label('Buscando impresoras…', 'Searching printers…', '프린터 검색 중…')}
+                </div>
+            )}
+
+            {error && (
+                <InfoBox variant="warning" style={{ marginBottom: 12 }}>
+                    <strong>Error:</strong> {error}
+                </InfoBox>
+            )}
+
+            {/* Test button */}
+            {printerInfo && (
+                <button className="btn btn-ghost" onClick={test} disabled={testing}>
+                    {testing ? label('Imprimiendo…', 'Printing…', '인쇄 중…') : label('🧪 Imprimir test', '🧪 Print test', '🧪 테스트 인쇄')}
+                </button>
+            )}
+
+            {/* Compatibility info */}
+            <div style={{ marginTop: 12, padding: 10, background: 'var(--bg-elevated)', borderRadius: 8, fontSize: 11, color: 'var(--text-muted)' }}>
+                <div>
+                    {caps.bluetooth ? '✓' : '✗'} Web Bluetooth (Chrome/Edge)
+                </div>
+                <div>
+                    {caps.serial ? '✓' : '✗'} Web Serial (Chrome/Edge desktop)
+                </div>
+                <div>✓ PDF fallback ({label('siempre disponible', 'always available', '항상 사용 가능')})</div>
+                {!caps.bluetooth && !caps.serial && (
+                    <div style={{ marginTop: 4, color: 'var(--warning, #fbbf24)' }}>
+                        {label(
+                            '💡 Para impresión directa usá Chrome o Edge. En Safari/Firefox usamos el modo PDF.',
+                            '💡 For direct printing use Chrome or Edge. On Safari/Firefox we use PDF mode.',
+                            '💡 직접 인쇄는 Chrome 또는 Edge 를 사용하세요. Safari/Firefox 에서는 PDF 모드를 사용합니다.'
+                        )}
+                    </div>
+                )}
+            </div>
+        </Card>
     );
 }

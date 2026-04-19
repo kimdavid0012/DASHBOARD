@@ -3,10 +3,11 @@ import {
     ShoppingCart, Search, X as XIcon, Plus, Minus, Trash2,
     Package, Store, CheckCircle, DollarSign, Barcode,
     Utensils, Armchair, Shirt, Briefcase, Clock, Flame,
-    Coffee, Pizza, Wine, Sparkles
+    Coffee, Pizza, Wine, Sparkles, Printer
 } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, Modal, Field, EmptyState, Badge, InfoBox, fmtMoney } from '../components/UI';
+import { TicketPrinter } from '../utils/printer';
 
 const METODOS = ['Efectivo', 'Tarjeta débito', 'Tarjeta crédito', 'Mercado Pago', 'Transferencia', 'QR'];
 
@@ -192,7 +193,23 @@ function CheckoutModal({ open, onClose, cart, state, onConfirm, mesa = null }) {
     );
 }
 
-function SuccessModal({ open, onClose }) {
+function SuccessModal({ open, onClose, lastSale }) {
+    const [printing, setPrinting] = useState(false);
+    const [printError, setPrintError] = useState('');
+
+    const handlePrint = async () => {
+        if (!lastSale) return;
+        setPrinting(true);
+        setPrintError('');
+        try {
+            await TicketPrinter.quickPrint(lastSale);
+        } catch (err) {
+            setPrintError(err.message || 'Error al imprimir');
+        } finally {
+            setPrinting(false);
+        }
+    };
+
     return (
         <Modal open={open} onClose={onClose} title="¡Listo!" size="sm">
             <div style={{ textAlign: 'center', padding: 24 }}>
@@ -209,9 +226,23 @@ function SuccessModal({ open, onClose }) {
                     Cobro registrado
                 </div>
                 <div className="text-sm text-muted mb-4">El stock se actualizó automáticamente</div>
-                <button className="btn btn-primary btn-lg" onClick={onClose}>
-                    <Sparkles size={16} /> Seguir vendiendo
-                </button>
+
+                {printError && (
+                    <div style={{ padding: 10, background: 'rgba(251, 113, 133, 0.1)', borderRadius: 8, marginBottom: 12, fontSize: 12, color: 'var(--danger, #fb7185)' }}>
+                        {printError}
+                    </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    {lastSale && (
+                        <button className="btn btn-ghost btn-lg" onClick={handlePrint} disabled={printing}>
+                            <Printer size={16} /> {printing ? 'Imprimiendo...' : 'Imprimir ticket'}
+                        </button>
+                    )}
+                    <button className="btn btn-primary btn-lg" onClick={onClose}>
+                        <Sparkles size={16} /> Seguir vendiendo
+                    </button>
+                </div>
             </div>
         </Modal>
     );
@@ -226,6 +257,7 @@ function usePOSLogic() {
     const [cart, setCart] = useState([]);
     const [checkoutOpen, setCheckoutOpen] = useState(false);
     const [successOpen, setSuccessOpen] = useState(false);
+    const [lastSale, setLastSale] = useState(null);
 
     const productos = (state.productos || []).filter(p => p.activo !== false);
     const current = state.meta.currentSucursalId || 'all';
@@ -268,6 +300,24 @@ function usePOSLogic() {
             }
         });
 
+        // Snapshot for ticket printing
+        const sucursalObj = state.sucursales.find(s => s.id === sucursalId);
+        const empleadoObj = state.empleados?.find(e => e.id === empleadoId);
+        const clienteObj = state.clientes?.find(c => c.id === clienteId);
+        const ventaNum = (state.ventas?.length || 0) + 1;
+
+        setLastSale({
+            business: state.business,
+            sucursal: sucursalObj,
+            empleado: empleadoObj,
+            cliente: clienteObj,
+            items: cart,
+            subtotal, descuento, total,
+            metodoPago: metodo,
+            fecha: new Date(),
+            numero: ventaNum
+        });
+
         setCheckoutOpen(false);
         setSuccessOpen(true);
         setCart([]);
@@ -276,7 +326,7 @@ function usePOSLogic() {
     return {
         state, actions, labels, cart, setCart, productos, current,
         addToCart, checkoutOpen, setCheckoutOpen,
-        successOpen, setSuccessOpen, confirmSale
+        successOpen, setSuccessOpen, confirmSale, lastSale
     };
 }
 
@@ -287,7 +337,7 @@ function POSRestaurant() {
     const {
         state, labels, cart, setCart, productos,
         addToCart, checkoutOpen, setCheckoutOpen,
-        successOpen, setSuccessOpen, confirmSale
+        successOpen, setSuccessOpen, confirmSale, lastSale
     } = usePOSLogic();
 
     const [selectedMesaId, setSelectedMesaId] = useState(null);
@@ -409,7 +459,7 @@ function POSRestaurant() {
                 onConfirm={(data) => confirmSale({ ...data, mesaId: selectedMesaId })}
                 mesa={selectedMesa}
             />
-            <SuccessModal open={successOpen} onClose={() => setSuccessOpen(false)} />
+            <SuccessModal open={successOpen} onClose={() => setSuccessOpen(false)} lastSale={lastSale} />
         </div>
     );
 }
@@ -421,7 +471,7 @@ function POSKiosco() {
     const {
         state, labels, cart, setCart, productos,
         addToCart, checkoutOpen, setCheckoutOpen,
-        successOpen, setSuccessOpen, confirmSale
+        successOpen, setSuccessOpen, confirmSale, lastSale
     } = usePOSLogic();
 
     const [barcode, setBarcode] = useState('');
@@ -551,7 +601,7 @@ function POSKiosco() {
             </div>
 
             <CheckoutModal open={checkoutOpen} onClose={() => setCheckoutOpen(false)} cart={cart} state={state} onConfirm={confirmSale} />
-            <SuccessModal open={successOpen} onClose={() => setSuccessOpen(false)} />
+            <SuccessModal open={successOpen} onClose={() => setSuccessOpen(false)} lastSale={lastSale} />
         </div>
     );
 }
@@ -563,7 +613,7 @@ function POSAccesorios() {
     const {
         state, labels, cart, setCart, productos,
         addToCart, checkoutOpen, setCheckoutOpen,
-        successOpen, setSuccessOpen, confirmSale
+        successOpen, setSuccessOpen, confirmSale, lastSale
     } = usePOSLogic();
 
     const [categoria, setCategoria] = useState('all');
@@ -721,7 +771,7 @@ function POSAccesorios() {
             </Modal>
 
             <CheckoutModal open={checkoutOpen} onClose={() => setCheckoutOpen(false)} cart={cart} state={state} onConfirm={confirmSale} />
-            <SuccessModal open={successOpen} onClose={() => setSuccessOpen(false)} />
+            <SuccessModal open={successOpen} onClose={() => setSuccessOpen(false)} lastSale={lastSale} />
         </div>
     );
 }
@@ -733,7 +783,7 @@ function POSServicios() {
     const {
         state, labels, cart, setCart, productos,
         addToCart, checkoutOpen, setCheckoutOpen,
-        successOpen, setSuccessOpen, confirmSale
+        successOpen, setSuccessOpen, confirmSale, lastSale
     } = usePOSLogic();
 
     const [clienteId, setClienteId] = useState('');
@@ -819,7 +869,7 @@ function POSServicios() {
                 state={state}
                 onConfirm={(data) => confirmSale({ ...data, clienteId: data.clienteId || clienteId })}
             />
-            <SuccessModal open={successOpen} onClose={() => setSuccessOpen(false)} />
+            <SuccessModal open={successOpen} onClose={() => setSuccessOpen(false)} lastSale={lastSale} />
         </div>
     );
 }
@@ -831,7 +881,7 @@ function POSGeneral() {
     const {
         state, labels, cart, setCart, productos,
         addToCart, checkoutOpen, setCheckoutOpen,
-        successOpen, setSuccessOpen, confirmSale
+        successOpen, setSuccessOpen, confirmSale, lastSale
     } = usePOSLogic();
 
     const [search, setSearch] = useState('');
@@ -918,7 +968,7 @@ function POSGeneral() {
             </div>
 
             <CheckoutModal open={checkoutOpen} onClose={() => setCheckoutOpen(false)} cart={cart} state={state} onConfirm={confirmSale} />
-            <SuccessModal open={successOpen} onClose={() => setSuccessOpen(false)} />
+            <SuccessModal open={successOpen} onClose={() => setSuccessOpen(false)} lastSale={lastSale} />
         </div>
     );
 }
