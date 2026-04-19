@@ -1,23 +1,17 @@
 import React, { useState } from 'react';
-import { UserPlus, Plus, Pencil, Trash2, Shield, Mail, Store as StoreIcon } from 'lucide-react';
-import { useData } from '../store/DataContext';
-import { Card, Modal, Field, EmptyState, Badge, KpiCard } from '../components/UI';
+import { UserCog, Plus, Pencil, Trash2, Shield } from 'lucide-react';
+import { useData, SECTION_HELP } from '../store/DataContext';
+import { PageHeader, Card, Modal, Field, EmptyState, Badge, InfoBox } from '../components/UI';
 
 const ROLES = [
-    { value: 'admin', label: 'Administrador', descripcion: 'Acceso total al sistema' },
-    { value: 'gerente', label: 'Gerente', descripcion: 'Gestiona sucursal y equipo' },
-    { value: 'encargado', label: 'Encargado/a', descripcion: 'Operación diaria del local' },
-    { value: 'vendedor', label: 'Vendedor/a', descripcion: 'POS y atención al cliente' },
-    { value: 'deposito', label: 'Depósito', descripcion: 'Inventario y conteo' },
-    { value: 'marketing', label: 'Marketing', descripcion: 'Contenido y publicidad' },
-    { value: 'contador', label: 'Contador', descripcion: 'Solo reportes financieros' }
+    { id: 'admin', nombre: 'Admin', color: 'danger', desc: 'Acceso total al sistema' },
+    { id: 'gerente', nombre: 'Gerente', color: 'warning', desc: 'Toda la operación de su sucursal' },
+    { id: 'vendedor', nombre: 'Vendedor', color: 'info', desc: 'POS + sus propias ventas' },
+    { id: 'contador', nombre: 'Contador', color: 'success', desc: 'Solo informes y contabilidad' },
+    { id: 'marketing', nombre: 'Marketing', color: 'default', desc: 'IG, TikTok, Analytics, agentes AI' }
 ];
 
-const EMPTY = {
-    nombre: '', apellido: '', email: '', cargo: '',
-    rol: 'vendedor', sucursalId: '',
-    telefono: '', activo: true, notas: ''
-};
+const EMPTY = { nombre: '', email: '', rol: 'vendedor', sucursalId: '', activo: true, notas: '' };
 
 export default function UsuariosPage() {
     const { state, actions } = useData();
@@ -25,95 +19,85 @@ export default function UsuariosPage() {
     const [editId, setEditId] = useState(null);
     const [form, setForm] = useState(EMPTY);
 
-    const usuarios = state.usuarios || [];
-    const sucursales = state.sucursales || [];
-
     const save = () => {
-        if (!form.nombre.trim() || !form.email.trim()) return alert('Nombre y email son obligatorios');
+        if (!form.nombre.trim()) return alert('Nombre es obligatorio');
+        if (!form.email.trim()) return alert('Email es obligatorio');
         if (editId) actions.update('usuarios', editId, form);
         else actions.add('usuarios', form);
         setOpen(false);
     };
 
     return (
-        <div className="flex-col gap-4">
-            <div className="kpi-grid">
-                <KpiCard icon={<UserPlus size={20} />} label="Cuentas creadas" value={usuarios.length} color="#14b8a6" />
-                <KpiCard icon={<Shield size={20} />} label="Administradores" value={usuarios.filter(u => u.rol === 'admin').length} color="#a855f7" />
-                <KpiCard icon={<StoreIcon size={20} />} label="Con sucursal asignada" value={usuarios.filter(u => u.sucursalId).length} color="#0ea5e9" />
-                <KpiCard icon={<UserPlus size={20} />} label="Activos" value={usuarios.filter(u => u.activo).length} color="#22c55e" />
-            </div>
-
-            <Card
-                title="Usuarios del sistema"
-                subtitle="Gestión de cuentas que acceden al dashboard"
+        <div>
+            <PageHeader
+                icon={UserCog}
+                title="Cuentas del sistema"
+                subtitle="Usuarios que acceden al Dashboard"
+                help={SECTION_HELP.usuarios}
                 actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setEditId(null); setOpen(true); }}><Plus size={14} /> Nueva cuenta</button>}
-            >
-                {usuarios.length === 0 ? (
-                    <EmptyState
-                        icon={UserPlus}
-                        title="Todavía no agregaste cuentas"
-                        description="Acá podés crear cuentas para tu equipo asignando rol, cargo y sucursal."
-                        action={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={14} /> Crear primera cuenta</button>}
-                        tips={[
-                            'Una cuenta por persona con email único',
-                            'Rol (admin, gerente, vendedor, etc.) — define los permisos',
-                            'Sucursal asignada — el dropdown global se ajusta a lo que puede ver',
-                            'Activar/desactivar sin borrar el histórico',
-                            'Cuando conectes Firebase Auth, estas cuentas van a poder loguearse'
-                        ]}
-                    />
-                ) : (
-                    <div className="table-wrap">
-                        <table className="table">
-                            <thead>
-                                <tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Cargo</th><th>Sucursal</th><th>Estado</th><th style={{ textAlign: 'right' }}>Acciones</th></tr>
-                            </thead>
-                            <tbody>
-                                {usuarios.map(u => (
-                                    <tr key={u.id}>
-                                        <td><div className="font-semibold">{u.nombre} {u.apellido}</div></td>
-                                        <td><div className="text-sm flex items-center gap-1"><Mail size={11} /> {u.email}</div></td>
-                                        <td><Badge variant={u.rol === 'admin' ? 'info' : 'default'}>{ROLES.find(r => r.value === u.rol)?.label || u.rol}</Badge></td>
-                                        <td className="text-sm">{u.cargo || '—'}</td>
-                                        <td className="text-sm">{sucursales.find(s => s.id === u.sucursalId)?.nombre || '—'}</td>
-                                        <td>{u.activo ? <Badge variant="success">Activo</Badge> : <Badge variant="muted">Inactivo</Badge>}</td>
-                                        <td style={{ textAlign: 'right' }}>
-                                            <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setForm({ ...EMPTY, ...u }); setEditId(u.id); setOpen(true); }}><Pencil size={13} /></button>
-                                            <button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar?')) actions.remove('usuarios', u.id); }}><Trash2 size={13} /></button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </Card>
+            />
 
-            <Card title="Info de seguridad" style={{ background: 'rgba(245,158,11,0.06)', borderColor: 'rgba(245,158,11,0.2)' }}>
-                <div className="text-sm text-muted">
-                    Este Dashboard funciona <strong>sin login</strong> para que sea simple de probar.
-                    Si querés activar autenticación real (login con email/contraseña o Google), podés conectar Firebase Auth en Configuración.
-                    Las cuentas creadas acá quedan registradas y listas para migrar cuando actives el login.
-                </div>
-            </Card>
+            <InfoBox>
+                <strong>Diferencia clave:</strong> las <em>Cuentas</em> son personas que USAN el sistema (con email y rol). Los <em>Empleados</em> son tu equipo operativo (cajeros, vendedores, mozos, etc.). Un empleado puede o no tener una cuenta de usuario.
+            </InfoBox>
+
+            <div className="mt-3">
+                <Card>
+                    {state.usuarios.length === 0 ? (
+                        <EmptyState
+                            icon={UserCog}
+                            title="Sin cuentas creadas"
+                            description="Creá cuentas para que tu equipo pueda acceder al sistema con permisos específicos."
+                            action={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={14} /> Crear primera cuenta</button>}
+                            tips={[
+                                '5 roles con distintos permisos',
+                                'Asignación por sucursal (opcional)',
+                                'Estado activo/inactivo para dar de baja sin borrar',
+                                'Diferencia clara entre "cuenta" (login) y "empleado" (staff operativo)'
+                            ]}
+                            example="Ej: María García - maria@celavie.com - Rol Gerente - Sucursal Palermo"
+                        />
+                    ) : (
+                        <div className="table-wrap">
+                            <table className="table">
+                                <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Sucursal</th><th>Estado</th><th></th></tr></thead>
+                                <tbody>
+                                    {state.usuarios.map(u => {
+                                        const rol = ROLES.find(r => r.id === u.rol) || ROLES[2];
+                                        return (
+                                            <tr key={u.id}>
+                                                <td className="font-semibold">{u.nombre}</td>
+                                                <td className="text-sm">{u.email}</td>
+                                                <td><Badge variant={rol.color}>{rol.nombre}</Badge></td>
+                                                <td className="text-sm">{state.sucursales.find(s => s.id === u.sucursalId)?.nombre || 'Todas'}</td>
+                                                <td>{u.activo ? <Badge variant="success">Activo</Badge> : <Badge variant="muted">Inactivo</Badge>}</td>
+                                                <td style={{ textAlign: 'right' }}>
+                                                    <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setForm({ ...EMPTY, ...u }); setEditId(u.id); setOpen(true); }}><Pencil size={13} /></button>
+                                                    <button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar?')) actions.remove('usuarios', u.id); }}><Trash2 size={13} /></button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </Card>
+            </div>
 
             <Modal open={open} onClose={() => setOpen(false)} title={editId ? 'Editar cuenta' : 'Nueva cuenta'}>
                 <div className="form-grid">
-                    <Field label="Nombre" required><input className="input" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} /></Field>
-                    <Field label="Apellido"><input className="input" value={form.apellido} onChange={e => setForm({ ...form, apellido: e.target.value })} /></Field>
+                    <Field label="Nombre completo" required><input className="input" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} /></Field>
                     <Field label="Email" required><input className="input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
-                    <Field label="Teléfono"><input className="input" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} /></Field>
-                    <Field label="Cargo" hint="Cargo que ocupa en la empresa"><input className="input" placeholder="Ej: Encargado de local" value={form.cargo} onChange={e => setForm({ ...form, cargo: e.target.value })} /></Field>
-                    <Field label="Rol en el sistema" hint={ROLES.find(r => r.value === form.rol)?.descripcion}>
+                    <Field label="Rol" required>
                         <select className="select" value={form.rol} onChange={e => setForm({ ...form, rol: e.target.value })}>
-                            {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                            {ROLES.map(r => <option key={r.id} value={r.id}>{r.nombre} — {r.desc}</option>)}
                         </select>
                     </Field>
-                    <Field label="Sucursal asignada">
+                    <Field label="Sucursal" hint="Si lo dejás vacío ve todas">
                         <select className="select" value={form.sucursalId} onChange={e => setForm({ ...form, sucursalId: e.target.value })}>
-                            <option value="">Todas (solo admin/gerente)</option>
-                            {sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                            <option value="">Todas las sucursales</option>
+                            {state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
                         </select>
                     </Field>
                     <Field label="Estado">
@@ -122,10 +106,9 @@ export default function UsuariosPage() {
                         </select>
                     </Field>
                 </div>
-                <div className="mt-3"><Field label="Notas"><textarea className="textarea" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} /></Field></div>
-                <div className="flex gap-2 mt-4" style={{ justifyContent: 'flex-end' }}>
+                <div className="flex gap-2 mt-4 justify-end">
                     <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
-                    <button className="btn btn-primary" onClick={save}>{editId ? 'Guardar' : 'Crear cuenta'}</button>
+                    <button className="btn btn-primary" onClick={save}>{editId ? 'Guardar' : 'Crear'}</button>
                 </div>
             </Modal>
         </div>

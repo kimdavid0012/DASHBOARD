@@ -1,94 +1,87 @@
 import React, { useMemo, useState } from 'react';
 import {
-    Users, Plus, Pencil, Trash2, Phone, Mail, MapPin,
-    FileText, DollarSign, Calendar, ClipboardList,
-    CreditCard, Wallet, Repeat as RepeatIcon, TrendingDown
+    Users2, Plus, Pencil, Trash2, Banknote, Receipt, CalendarDays,
+    ArrowRightLeft, UserCheck, ShoppingBag, PiggyBank
 } from 'lucide-react';
-import { useData, filterBySucursal } from '../store/DataContext';
-import { Card, Modal, Field, EmptyState, Badge, KpiCard, fmtMoney, fmtDate, BarChart, CHART_COLORS } from '../components/UI';
+import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
+import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, BarChart, fmtMoney, fmtDate, CHART_COLORS, InfoBox } from '../components/UI';
 
-// ═══════════════════════════════ CLIENTES ═══════════════════════════════
+// ═══════════════════════════ CLIENTES ═══════════════════════════
 export function ClientesPage() {
     const { state, actions } = useData();
-    const EMPTY = { nombre: '', telefono: '', email: '', dniCuit: '', direccion: '', ciudad: '', provincia: '', notas: '' };
+    const labels = getRubroLabels(state.business.rubro);
     const [open, setOpen] = useState(false);
     const [editId, setEditId] = useState(null);
+    const EMPTY = { nombre: '', telefono: '', email: '', direccion: '', ciudad: '', notas: '' };
     const [form, setForm] = useState(EMPTY);
-    const [search, setSearch] = useState('');
-
-    const clientes = state.clientes || [];
-    const filtered = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        if (!q) return clientes;
-        return clientes.filter(c => [c.nombre, c.telefono, c.email, c.dniCuit].some(v => (v || '').toLowerCase().includes(q)));
-    }, [clientes, search]);
-
-    // Compras por cliente
-    const comprasPorCliente = useMemo(() => {
-        const map = {};
-        state.ventas.forEach(v => {
-            if (!v.clienteId) return;
-            map[v.clienteId] = (map[v.clienteId] || 0) + Number(v.total || 0);
-        });
-        return map;
-    }, [state.ventas]);
 
     const save = () => {
-        if (!form.nombre.trim()) return alert('Nombre obligatorio');
+        if (!form.nombre.trim()) return alert('Nombre es obligatorio');
         if (editId) actions.update('clientes', editId, form);
         else actions.add('clientes', form);
         setOpen(false);
     };
 
+    const totalPorCliente = (cid) => state.ventas.filter(v => v.clienteId === cid).reduce((s, v) => s + Number(v.total || 0), 0);
+
     return (
-        <div className="flex-col gap-4">
-            <div className="kpi-grid">
-                <KpiCard icon={<Users size={20} />} label="Clientes" value={clientes.length} color="#14b8a6" />
-                <KpiCard icon={<Users size={20} />} label="Con compras" value={Object.keys(comprasPorCliente).length} color="#22c55e" />
-                <KpiCard icon={<DollarSign size={20} />} label="Volumen total" value={fmtMoney(Object.values(comprasPorCliente).reduce((a, b) => a + b, 0), state.business.moneda)} color="#a855f7" />
+        <div>
+            <PageHeader
+                icon={Users2}
+                title={labels.clients}
+                subtitle="CRM básico"
+                help={SECTION_HELP.clientes}
+                actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setEditId(null); setOpen(true); }}><Plus size={14} /> Nuevo {labels.client.toLowerCase()}</button>}
+            />
+            <div className="kpi-grid mb-4">
+                <KpiCard icon={<Users2 size={20} />} label={labels.clients} value={state.clientes.length} color="#14b8a6" />
+                <KpiCard icon={<Users2 size={20} />} label="Con histórico" value={state.clientes.filter(c => state.ventas.some(v => v.clienteId === c.id)).length} color="#22c55e" />
             </div>
-            <Card title="Clientes" actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setEditId(null); setOpen(true); }}><Plus size={14} /> Nuevo cliente</button>}>
-                <div className="mb-3"><input className="input" style={{ maxWidth: 300 }} placeholder="Buscar..." value={search} onChange={e => setSearch(e.target.value)} /></div>
-                {clientes.length === 0 ? (
-                    <EmptyState icon={Users} title="Todavía no hay clientes"
-                        description="Cargá a tus clientes para llevar el histórico de compras."
-                        action={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={14} /> Agregar primero</button>}
-                        tips={['Nombre, teléfono, email, CUIT/DNI y dirección', 'Total comprado por cliente', 'Filtros por ciudad/provincia', 'En Informes: top clientes por facturación']} />
+            <Card>
+                {state.clientes.length === 0 ? (
+                    <EmptyState
+                        icon={Users2}
+                        title={`Sin ${labels.clients.toLowerCase()} cargados`}
+                        description={`Cargá ${labels.clients.toLowerCase()} para hacer seguimiento del histórico de compras.`}
+                        action={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={14} /> Agregar {labels.client.toLowerCase()}</button>}
+                        tips={['Nombre, teléfono, email y dirección', 'Al vender podés asociar la operación a un cliente', 'Histórico de compras y ranking de mejores clientes', 'Ideal para campañas de marketing dirigidas']}
+                        example="Ej: María López - 11-1234-5678 - maria@mail.com - Palermo"
+                    />
                 ) : (
                     <div className="table-wrap">
                         <table className="table">
-                            <thead><tr><th>Cliente</th><th>Contacto</th><th>CUIT/DNI</th><th>Ubicación</th><th style={{ textAlign: 'right' }}>Comprado</th><th></th></tr></thead>
+                            <thead><tr><th>{labels.client}</th><th>Contacto</th><th>Ubicación</th><th style={{ textAlign: 'right' }}>Total comprado</th><th></th></tr></thead>
                             <tbody>
-                                {filtered.map(c => (
-                                    <tr key={c.id}>
-                                        <td className="font-semibold">{c.nombre}</td>
-                                        <td>{c.telefono && <div className="text-sm flex items-center gap-1"><Phone size={11} /> {c.telefono}</div>}{c.email && <div className="text-xs text-muted">{c.email}</div>}</td>
-                                        <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{c.dniCuit || '—'}</td>
-                                        <td className="text-sm">{[c.ciudad, c.provincia].filter(Boolean).join(', ') || '—'}</td>
-                                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(comprasPorCliente[c.id] || 0, state.business.moneda)}</td>
-                                        <td style={{ textAlign: 'right' }}>
-                                            <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setForm({ ...EMPTY, ...c }); setEditId(c.id); setOpen(true); }}><Pencil size={13} /></button>
-                                            <button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar?')) actions.remove('clientes', c.id); }}><Trash2 size={13} /></button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                {state.clientes.map(c => {
+                                    const total = totalPorCliente(c.id);
+                                    return (
+                                        <tr key={c.id}>
+                                            <td className="font-semibold">{c.nombre}</td>
+                                            <td><div className="text-sm">{c.telefono || '—'}</div><div className="text-xs text-muted">{c.email || '—'}</div></td>
+                                            <td className="text-sm">{[c.ciudad, c.direccion].filter(Boolean).join(' · ') || '—'}</td>
+                                            <td style={{ textAlign: 'right', fontWeight: 600, color: total > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>{fmtMoney(total, state.business.moneda)}</td>
+                                            <td style={{ textAlign: 'right' }}>
+                                                <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setForm({ ...EMPTY, ...c }); setEditId(c.id); setOpen(true); }}><Pencil size={13} /></button>
+                                                <button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar?')) actions.remove('clientes', c.id); }}><Trash2 size={13} /></button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
                 )}
             </Card>
-            <Modal open={open} onClose={() => setOpen(false)} title={editId ? 'Editar cliente' : 'Nuevo cliente'}>
+            <Modal open={open} onClose={() => setOpen(false)} title={editId ? `Editar ${labels.client.toLowerCase()}` : `Nuevo ${labels.client.toLowerCase()}`}>
                 <div className="form-grid">
                     <Field label="Nombre" required><input className="input" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} /></Field>
                     <Field label="Teléfono"><input className="input" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} /></Field>
                     <Field label="Email"><input className="input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
-                    <Field label="CUIT / DNI"><input className="input" value={form.dniCuit} onChange={e => setForm({ ...form, dniCuit: e.target.value })} /></Field>
-                    <Field label="Dirección"><input className="input" value={form.direccion} onChange={e => setForm({ ...form, direccion: e.target.value })} /></Field>
                     <Field label="Ciudad"><input className="input" value={form.ciudad} onChange={e => setForm({ ...form, ciudad: e.target.value })} /></Field>
-                    <Field label="Provincia"><input className="input" value={form.provincia} onChange={e => setForm({ ...form, provincia: e.target.value })} /></Field>
+                    <Field label="Dirección"><input className="input" value={form.direccion} onChange={e => setForm({ ...form, direccion: e.target.value })} /></Field>
                 </div>
                 <div className="mt-3"><Field label="Notas"><textarea className="textarea" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} /></Field></div>
-                <div className="flex gap-2 mt-4" style={{ justifyContent: 'flex-end' }}>
+                <div className="flex gap-2 mt-4 justify-end">
                     <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
                     <button className="btn btn-primary" onClick={save}>{editId ? 'Guardar' : 'Crear'}</button>
                 </div>
@@ -97,28 +90,31 @@ export function ClientesPage() {
     );
 }
 
-// ═══════════════════════════════ GASTOS ═══════════════════════════════
+// ═══════════════════════════ GASTOS ═══════════════════════════
 export function GastosPage() {
     const { state, actions } = useData();
     const current = state.meta.currentSucursalId || 'all';
-    const gastos = filterBySucursal(state.gastos, current).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-    const CATS = ['Alquiler', 'Servicios', 'Proveedores', 'Sueldos', 'Impuestos', 'Publicidad', 'Logística', 'Mantenimiento', 'Insumos', 'Otro'];
-    const EMPTY = { fecha: new Date().toISOString().slice(0, 10), concepto: '', categoria: 'Otro', monto: '', sucursalId: '', metodo: 'Efectivo', notas: '' };
     const [open, setOpen] = useState(false);
     const [editId, setEditId] = useState(null);
+    const EMPTY = { concepto: '', monto: '', categoria: 'Alquiler', fecha: new Date().toISOString().slice(0, 10), sucursalId: '', metodo: 'Efectivo', notas: '' };
     const [form, setForm] = useState(EMPTY);
 
-    const total = gastos.reduce((s, g) => s + Number(g.monto || 0), 0);
+    const CATEGORIAS = ['Alquiler', 'Sueldos', 'Servicios', 'Mercadería', 'Impuestos', 'Marketing', 'Mantenimiento', 'Transporte', 'Papelería', 'Otros'];
+    const METODOS = ['Efectivo', 'Transferencia', 'Débito', 'Crédito', 'Cheque'];
+
+    const gastos = filterBySucursal(state.gastos, current).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+    const totalMes = gastos.filter(g => (g.fecha || '').startsWith(new Date().toISOString().slice(0, 7))).reduce((s, g) => s + Number(g.monto || 0), 0);
+
     const porCategoria = useMemo(() => {
-        const m = {};
-        gastos.forEach(g => { m[g.categoria || 'Otro'] = (m[g.categoria || 'Otro'] || 0) + Number(g.monto || 0); });
-        return Object.entries(m).sort((a, b) => b[1] - a[1]).map(([label, value], i) => ({
-            label, value, display: fmtMoney(value, state.business.moneda), color: CHART_COLORS[i % CHART_COLORS.length]
-        }));
+        const agg = {};
+        gastos.forEach(g => { agg[g.categoria] = (agg[g.categoria] || 0) + Number(g.monto || 0); });
+        return Object.entries(agg).sort((a, b) => b[1] - a[1]).map(([label, value], i) => ({ label, value, display: fmtMoney(value, state.business.moneda), color: CHART_COLORS[i % CHART_COLORS.length] }));
     }, [gastos, state.business.moneda]);
 
     const save = () => {
-        if (!form.concepto.trim() || !form.monto) return alert('Concepto y monto obligatorios');
+        if (!form.concepto.trim()) return alert('Concepto obligatorio');
+        if (!form.monto) return alert('Monto obligatorio');
+        if (!form.sucursalId) return alert('Sucursal obligatoria');
         const patch = { ...form, monto: Number(form.monto) };
         if (editId) actions.update('gastos', editId, patch);
         else actions.add('gastos', patch);
@@ -126,33 +122,36 @@ export function GastosPage() {
     };
 
     return (
-        <div className="flex-col gap-4">
-            <div className="kpi-grid">
-                <KpiCard icon={<TrendingDown size={20} />} label="Gastos registrados" value={gastos.length} color="#ef4444" />
-                <KpiCard icon={<DollarSign size={20} />} label="Total" value={fmtMoney(total, state.business.moneda)} color="#f59e0b" />
-                <KpiCard icon={<DollarSign size={20} />} label="Este mes" value={fmtMoney(gastos.filter(g => (g.fecha || '').slice(0, 7) === new Date().toISOString().slice(0, 7)).reduce((s, g) => s + Number(g.monto || 0), 0), state.business.moneda)} color="#a855f7" />
+        <div>
+            <PageHeader
+                icon={Receipt}
+                title="Gastos"
+                subtitle="Todo lo que sale de caja"
+                help={SECTION_HELP.gastos}
+                actions={<button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}><Plus size={14} /> Nuevo gasto</button>}
+            />
+            <div className="kpi-grid mb-4">
+                <KpiCard icon={<Receipt size={20} />} label="Gastos totales" value={gastos.length} color="#14b8a6" />
+                <KpiCard icon={<Receipt size={20} />} label="Gastado este mes" value={fmtMoney(totalMes, state.business.moneda)} color="#ef4444" />
+                <KpiCard icon={<Receipt size={20} />} label="Total histórico" value={fmtMoney(gastos.reduce((s, g) => s + Number(g.monto || 0), 0), state.business.moneda)} color="#f59e0b" />
             </div>
-            {gastos.length > 0 && <Card title="Gastos por categoría"><BarChart data={porCategoria} /></Card>}
-            <Card title="Gastos" subtitle={current === 'all' ? 'Todas las sucursales' : state.sucursales.find(s => s.id === current)?.nombre}
-                actions={<button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }}><Plus size={14} /> Nuevo gasto</button>}>
+            {porCategoria.length > 0 && <Card title="Gastos por categoría (histórico)" style={{ marginBottom: 16 }}><BarChart data={porCategoria} /></Card>}
+            <Card>
                 {gastos.length === 0 ? (
-                    <EmptyState icon={TrendingDown} title="Todavía no registraste gastos"
-                        description="Llevá el control de alquiler, sueldos, proveedores, servicios y más."
-                        action={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={14} /> Agregar primero</button>}
-                        tips={['Gastos categorizados (alquiler, sueldos, insumos, etc.)', 'Filtro por sucursal', 'Gráficos por categoría', 'Rentabilidad (ventas - gastos) en Informes']} />
+                    <EmptyState icon={Receipt} title="Sin gastos cargados" description="Registrá cada gasto para controlar el flujo real del negocio." action={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={14} /> Cargar primer gasto</button>} tips={['Alquiler, sueldos, proveedores, servicios, impuestos', 'Categorización automática para informes', 'Asociación a sucursal', 'Ranking por categoría y métodos de pago']} example="Ej: Alquiler local Palermo - $800.000 - Categoría Alquiler - Método Transferencia" />
                 ) : (
                     <div className="table-wrap">
                         <table className="table">
                             <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Sucursal</th><th>Método</th><th style={{ textAlign: 'right' }}>Monto</th><th></th></tr></thead>
                             <tbody>
-                                {gastos.map(g => (
+                                {gastos.slice(0, 100).map(g => (
                                     <tr key={g.id}>
                                         <td className="text-sm">{fmtDate(g.fecha)}</td>
                                         <td className="font-semibold">{g.concepto}</td>
                                         <td><Badge>{g.categoria}</Badge></td>
                                         <td className="text-sm">{state.sucursales.find(s => s.id === g.sucursalId)?.nombre || '—'}</td>
                                         <td className="text-sm">{g.metodo}</td>
-                                        <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>{fmtMoney(g.monto, state.business.moneda)}</td>
+                                        <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>-{fmtMoney(g.monto, state.business.moneda)}</td>
                                         <td style={{ textAlign: 'right' }}>
                                             <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setForm({ ...EMPTY, ...g }); setEditId(g.id); setOpen(true); }}><Pencil size={13} /></button>
                                             <button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar?')) actions.remove('gastos', g.id); }}><Trash2 size={13} /></button>
@@ -166,17 +165,15 @@ export function GastosPage() {
             </Card>
             <Modal open={open} onClose={() => setOpen(false)} title={editId ? 'Editar gasto' : 'Nuevo gasto'}>
                 <div className="form-grid">
-                    <Field label="Fecha"><input className="input" type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></Field>
                     <Field label="Concepto" required><input className="input" value={form.concepto} onChange={e => setForm({ ...form, concepto: e.target.value })} /></Field>
-                    <Field label="Categoría"><select className="select" value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>{CATS.map(c => <option key={c}>{c}</option>)}</select></Field>
-                    <Field label="Sucursal"><select className="select" value={form.sucursalId} onChange={e => setForm({ ...form, sucursalId: e.target.value })}>
-                        <option value="">Sin asignar</option>{state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-                    </select></Field>
                     <Field label="Monto" required><input className="input" type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} /></Field>
-                    <Field label="Método"><select className="select" value={form.metodo} onChange={e => setForm({ ...form, metodo: e.target.value })}>{['Efectivo', 'Transferencia', 'Tarjeta', 'Mercado Pago', 'Cheque'].map(m => <option key={m}>{m}</option>)}</select></Field>
+                    <Field label="Fecha"><input className="input" type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></Field>
+                    <Field label="Categoría"><select className="select" value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>{CATEGORIAS.map(c => <option key={c}>{c}</option>)}</select></Field>
+                    <Field label="Sucursal" required><select className="select" value={form.sucursalId} onChange={e => setForm({ ...form, sucursalId: e.target.value })}><option value="">Elegir...</option>{state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Field>
+                    <Field label="Método"><select className="select" value={form.metodo} onChange={e => setForm({ ...form, metodo: e.target.value })}>{METODOS.map(m => <option key={m}>{m}</option>)}</select></Field>
                 </div>
                 <div className="mt-3"><Field label="Notas"><textarea className="textarea" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} /></Field></div>
-                <div className="flex gap-2 mt-4" style={{ justifyContent: 'flex-end' }}>
+                <div className="flex gap-2 mt-4 justify-end">
                     <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
                     <button className="btn btn-primary" onClick={save}>{editId ? 'Guardar' : 'Crear'}</button>
                 </div>
@@ -185,52 +182,81 @@ export function GastosPage() {
     );
 }
 
-// ═══════════════════════════════ CAJA DIARIA ═══════════════════════════════
+// ═══════════════════════════ CAJA DIARIA (cierre Z) ═══════════════════════════
 export function CajaDiariaPage() {
     const { state, actions } = useData();
     const current = state.meta.currentSucursalId || 'all';
-    const cajas = filterBySucursal(state.cajaDiaria, current).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-    const EMPTY = { fecha: new Date().toISOString().slice(0, 10), sucursalId: '', montoApertura: '', montoCierre: '', observaciones: '' };
     const [open, setOpen] = useState(false);
+    const [editId, setEditId] = useState(null);
+    const EMPTY = {
+        fecha: new Date().toISOString().slice(0, 10), sucursalId: '',
+        apertura: 0, cierre: 0, notas: ''
+    };
     const [form, setForm] = useState(EMPTY);
 
-    const ventasDia = (fecha, sucId) => state.ventas.filter(v => (v.fecha || '').slice(0, 10) === fecha && v.sucursalId === sucId).reduce((s, v) => s + Number(v.total || 0), 0);
-    const gastosDia = (fecha, sucId) => state.gastos.filter(g => (g.fecha || '').slice(0, 10) === fecha && g.sucursalId === sucId).reduce((s, g) => s + Number(g.monto || 0), 0);
+    const cajas = filterBySucursal(state.cajaDiaria, current).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+
+    const ventasDelDia = (suc, fecha) => state.ventas.filter(v => v.sucursalId === suc && (v.fecha || '').slice(0, 10) === fecha).reduce((s, v) => s + Number(v.total || 0), 0);
+    const gastosDelDia = (suc, fecha) => state.gastos.filter(g => g.sucursalId === suc && (g.fecha || '').slice(0, 10) === fecha).reduce((s, g) => s + Number(g.monto || 0), 0);
 
     const save = () => {
-        if (!form.sucursalId) return alert('Seleccioná sucursal');
-        const ventas = ventasDia(form.fecha, form.sucursalId);
-        const gastos = gastosDia(form.fecha, form.sucursalId);
-        actions.add('cajaDiaria', { ...form, montoApertura: Number(form.montoApertura || 0), montoCierre: Number(form.montoCierre || 0), ventasDia: ventas, gastosDia: gastos });
+        if (!form.sucursalId) return alert('Sucursal obligatoria');
+        const patch = { ...form, apertura: Number(form.apertura), cierre: Number(form.cierre) };
+        if (editId) actions.update('cajaDiaria', editId, patch);
+        else actions.add('cajaDiaria', patch);
         setOpen(false);
     };
 
     return (
-        <div className="flex-col gap-4">
-            <Card title="Caja diaria (Cierre Z)" subtitle="Apertura y cierre de caja por sucursal y fecha"
-                actions={<button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setOpen(true); }}><Plus size={14} /> Registrar cierre</button>}>
+        <div>
+            <PageHeader
+                icon={PiggyBank}
+                title="Caja diaria"
+                subtitle="Apertura y cierre Z por día"
+                help={SECTION_HELP.caja}
+                actions={<button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}><Plus size={14} /> Nueva caja</button>}
+            />
+            <InfoBox variant="info">
+                <strong>Fórmula:</strong> Esperado = Apertura + Ventas del día (efectivo) − Gastos del día. Diferencia = Cierre declarado − Esperado. Si la diferencia es negativa y grande, revisá.
+            </InfoBox>
+            <Card style={{ marginTop: 12 }}>
                 {cajas.length === 0 ? (
-                    <EmptyState icon={Wallet} title="Todavía no registraste cierres de caja"
-                        description="Registrá la apertura y cierre diario para cuadrar efectivo."
-                        tips={['Apertura y cierre por sucursal y día', 'Cálculo automático de ventas y gastos del día', 'Diferencia esperado vs real (faltantes)', 'Historial completo para auditoría']} />
+                    <EmptyState
+                        icon={PiggyBank}
+                        title="Sin cierres de caja"
+                        description="Registrá apertura y cierre diario para trackear diferencias."
+                        action={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={14} /> Primer cierre</button>}
+                        tips={['Monto de apertura al abrir el día', 'Ventas del día calculadas automáticamente', 'Gastos del día descontados', 'Cierre declarado vs esperado', 'Alerta de diferencias']}
+                        example="Ej: Apertura $5.000 + Ventas $120.000 - Gastos $3.000 = Esperado $122.000"
+                    />
                 ) : (
                     <div className="table-wrap">
                         <table className="table">
-                            <thead><tr><th>Fecha</th><th>Sucursal</th><th style={{ textAlign: 'right' }}>Apertura</th><th style={{ textAlign: 'right' }}>Ventas</th><th style={{ textAlign: 'right' }}>Gastos</th><th style={{ textAlign: 'right' }}>Cierre</th><th style={{ textAlign: 'right' }}>Dif.</th><th></th></tr></thead>
+                            <thead><tr><th>Fecha</th><th>Sucursal</th><th style={{ textAlign: 'right' }}>Apertura</th><th style={{ textAlign: 'right' }}>Ventas</th><th style={{ textAlign: 'right' }}>Gastos</th><th style={{ textAlign: 'right' }}>Esperado</th><th style={{ textAlign: 'right' }}>Cierre</th><th style={{ textAlign: 'right' }}>Dif.</th><th></th></tr></thead>
                             <tbody>
                                 {cajas.map(c => {
-                                    const esperado = Number(c.montoApertura || 0) + Number(c.ventasDia || 0) - Number(c.gastosDia || 0);
-                                    const dif = Number(c.montoCierre || 0) - esperado;
+                                    const v = ventasDelDia(c.sucursalId, c.fecha);
+                                    const g = gastosDelDia(c.sucursalId, c.fecha);
+                                    const esperado = Number(c.apertura || 0) + v - g;
+                                    const diff = Number(c.cierre || 0) - esperado;
                                     return (
                                         <tr key={c.id}>
-                                            <td>{fmtDate(c.fecha)}</td>
+                                            <td className="text-sm">{fmtDate(c.fecha)}</td>
                                             <td className="text-sm">{state.sucursales.find(s => s.id === c.sucursalId)?.nombre || '—'}</td>
-                                            <td style={{ textAlign: 'right' }}>{fmtMoney(c.montoApertura, state.business.moneda)}</td>
-                                            <td style={{ textAlign: 'right', color: 'var(--success)' }}>{fmtMoney(c.ventasDia, state.business.moneda)}</td>
-                                            <td style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(c.gastosDia, state.business.moneda)}</td>
-                                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(c.montoCierre, state.business.moneda)}</td>
-                                            <td style={{ textAlign: 'right' }}><Badge variant={Math.abs(dif) < 1 ? 'success' : 'danger'}>{dif >= 0 ? '+' : ''}{fmtMoney(dif, state.business.moneda)}</Badge></td>
-                                            <td style={{ textAlign: 'right' }}><button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar?')) actions.remove('cajaDiaria', c.id); }}><Trash2 size={13} /></button></td>
+                                            <td style={{ textAlign: 'right' }}>{fmtMoney(c.apertura, state.business.moneda)}</td>
+                                            <td style={{ textAlign: 'right', color: 'var(--success)' }}>+{fmtMoney(v, state.business.moneda)}</td>
+                                            <td style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(g, state.business.moneda)}</td>
+                                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(esperado, state.business.moneda)}</td>
+                                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(c.cierre, state.business.moneda)}</td>
+                                            <td style={{ textAlign: 'right' }}>
+                                                <Badge variant={Math.abs(diff) < 100 ? 'success' : diff < 0 ? 'danger' : 'warning'}>
+                                                    {diff >= 0 ? '+' : ''}{fmtMoney(diff, state.business.moneda)}
+                                                </Badge>
+                                            </td>
+                                            <td style={{ textAlign: 'right' }}>
+                                                <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setForm({ ...EMPTY, ...c }); setEditId(c.id); setOpen(true); }}><Pencil size={13} /></button>
+                                                <button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar?')) actions.remove('cajaDiaria', c.id); }}><Trash2 size={13} /></button>
+                                            </td>
                                         </tr>
                                     );
                                 })}
@@ -239,68 +265,63 @@ export function CajaDiariaPage() {
                     </div>
                 )}
             </Card>
-            <Modal open={open} onClose={() => setOpen(false)} title="Cierre de caja">
+            <Modal open={open} onClose={() => setOpen(false)} title={editId ? 'Editar cierre' : 'Nuevo cierre de caja'}>
                 <div className="form-grid">
-                    <Field label="Fecha"><input className="input" type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></Field>
+                    <Field label="Fecha" required><input className="input" type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></Field>
                     <Field label="Sucursal" required><select className="select" value={form.sucursalId} onChange={e => setForm({ ...form, sucursalId: e.target.value })}><option value="">Elegir...</option>{state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Field>
-                    <Field label="Monto apertura"><input className="input" type="number" value={form.montoApertura} onChange={e => setForm({ ...form, montoApertura: e.target.value })} /></Field>
-                    <Field label="Monto cierre (real)"><input className="input" type="number" value={form.montoCierre} onChange={e => setForm({ ...form, montoCierre: e.target.value })} /></Field>
+                    <Field label="Apertura" hint="Lo que dejaste al abrir"><input className="input" type="number" value={form.apertura} onChange={e => setForm({ ...form, apertura: e.target.value })} /></Field>
+                    <Field label="Cierre" hint="Lo que realmente hay en caja"><input className="input" type="number" value={form.cierre} onChange={e => setForm({ ...form, cierre: e.target.value })} /></Field>
                 </div>
-                {form.sucursalId && (
-                    <div className="card mt-3" style={{ background: 'var(--bg-elevated)', padding: 12 }}>
-                        <div className="text-xs text-muted mb-1">Cálculo del día</div>
-                        <div className="flex justify-between text-sm"><span>Ventas del día:</span><span style={{ color: 'var(--success)' }}>{fmtMoney(ventasDia(form.fecha, form.sucursalId), state.business.moneda)}</span></div>
-                        <div className="flex justify-between text-sm"><span>Gastos del día:</span><span style={{ color: 'var(--danger)' }}>-{fmtMoney(gastosDia(form.fecha, form.sucursalId), state.business.moneda)}</span></div>
-                    </div>
-                )}
-                <div className="mt-3"><Field label="Observaciones"><textarea className="textarea" value={form.observaciones} onChange={e => setForm({ ...form, observaciones: e.target.value })} /></Field></div>
-                <div className="flex gap-2 mt-4" style={{ justifyContent: 'flex-end' }}>
+                <div className="mt-3"><Field label="Notas"><textarea className="textarea" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} /></Field></div>
+                <div className="flex gap-2 mt-4 justify-end">
                     <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
-                    <button className="btn btn-primary" onClick={save}>Registrar</button>
+                    <button className="btn btn-primary" onClick={save}>{editId ? 'Guardar' : 'Crear'}</button>
                 </div>
             </Modal>
         </div>
     );
 }
 
-// ═══════════════════════════════ TRANSFERENCIAS ═══════════════════════════════
+// ═══════════════════════════ TRANSFERENCIAS ═══════════════════════════
 export function TransferenciasPage() {
     const { state, actions } = useData();
-    const EMPTY = { fecha: new Date().toISOString().slice(0, 10), fromSucursalId: '', toSucursalId: '', productoId: '', cantidad: '', notas: '' };
     const [open, setOpen] = useState(false);
+    const EMPTY = { fecha: new Date().toISOString().slice(0, 10), origenId: '', destinoId: '', productoId: '', cantidad: 1, notas: '' };
     const [form, setForm] = useState(EMPTY);
 
     const save = () => {
-        if (!form.fromSucursalId || !form.toSucursalId) return alert('Sucursales origen y destino son obligatorias');
-        if (form.fromSucursalId === form.toSucursalId) return alert('Origen y destino no pueden ser iguales');
-        actions.add('transferencias', { ...form, cantidad: Number(form.cantidad || 0) });
+        if (!form.origenId || !form.destinoId || !form.productoId) return alert('Completá origen, destino y producto');
+        if (form.origenId === form.destinoId) return alert('Origen y destino deben ser distintos');
+        actions.add('transferencias', { ...form, cantidad: Number(form.cantidad) });
         setOpen(false);
     };
 
-    const transfs = state.transferencias || [];
-
     return (
-        <div className="flex-col gap-4">
-            <Card title="Transferencias entre sucursales" subtitle="Movimiento de mercadería entre locales"
-                actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setOpen(true); }} disabled={state.sucursales.length < 2}><Plus size={14} /> Nueva transferencia</button>}>
+        <div>
+            <PageHeader
+                icon={ArrowRightLeft}
+                title="Transferencias"
+                subtitle="Movimiento de stock entre sucursales"
+                help={SECTION_HELP.transferencias}
+                actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setOpen(true); }} disabled={state.sucursales.length < 2}><Plus size={14} /> Nueva transferencia</button>}
+            />
+            <Card>
                 {state.sucursales.length < 2 ? (
-                    <EmptyState icon={RepeatIcon} title="Necesitás al menos 2 sucursales" description="Creá una segunda sucursal para poder transferir mercadería." />
-                ) : transfs.length === 0 ? (
-                    <EmptyState icon={RepeatIcon} title="Todavía no hay transferencias"
-                        tips={['Registro de movimientos de mercadería entre sucursales', 'Historial con fecha, origen, destino y cantidad', 'Trazabilidad para auditoría']} />
+                    <EmptyState icon={ArrowRightLeft} title="Necesitás al menos 2 sucursales" description="Las transferencias son movimientos entre distintas sucursales." />
+                ) : state.transferencias.length === 0 ? (
+                    <EmptyState icon={ArrowRightLeft} title="Sin transferencias" description="Registrá movimientos de mercadería entre locales." action={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={14} /> Primera transferencia</button>} tips={['Origen y destino', 'Producto y cantidad', 'Trazabilidad de stock']} example="Ej: 10 unidades de Coca 500ml desde Depósito → Local Palermo" />
                 ) : (
                     <div className="table-wrap">
                         <table className="table">
-                            <thead><tr><th>Fecha</th><th>Desde</th><th>Hacia</th><th>Producto</th><th style={{ textAlign: 'right' }}>Cantidad</th><th>Notas</th><th></th></tr></thead>
+                            <thead><tr><th>Fecha</th><th>Desde</th><th>Hacia</th><th>Producto</th><th>Cantidad</th><th></th></tr></thead>
                             <tbody>
-                                {transfs.map(t => (
+                                {state.transferencias.map(t => (
                                     <tr key={t.id}>
-                                        <td>{fmtDate(t.fecha)}</td>
-                                        <td className="text-sm">{state.sucursales.find(s => s.id === t.fromSucursalId)?.nombre}</td>
-                                        <td className="text-sm">{state.sucursales.find(s => s.id === t.toSucursalId)?.nombre}</td>
-                                        <td className="text-sm">{state.productos.find(p => p.id === t.productoId)?.nombre || '—'}</td>
-                                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{t.cantidad}</td>
-                                        <td className="text-xs text-muted">{t.notas}</td>
+                                        <td className="text-sm">{fmtDate(t.fecha)}</td>
+                                        <td>{state.sucursales.find(s => s.id === t.origenId)?.nombre || '—'}</td>
+                                        <td>{state.sucursales.find(s => s.id === t.destinoId)?.nombre || '—'}</td>
+                                        <td>{state.productos.find(p => p.id === t.productoId)?.nombre || '—'}</td>
+                                        <td>{t.cantidad}</td>
                                         <td style={{ textAlign: 'right' }}><button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar?')) actions.remove('transferencias', t.id); }}><Trash2 size={13} /></button></td>
                                     </tr>
                                 ))}
@@ -312,63 +333,78 @@ export function TransferenciasPage() {
             <Modal open={open} onClose={() => setOpen(false)} title="Nueva transferencia">
                 <div className="form-grid">
                     <Field label="Fecha"><input className="input" type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></Field>
-                    <Field label="Producto"><select className="select" value={form.productoId} onChange={e => setForm({ ...form, productoId: e.target.value })}><option value="">Elegir...</option>{state.productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Field>
-                    <Field label="Desde sucursal" required><select className="select" value={form.fromSucursalId} onChange={e => setForm({ ...form, fromSucursalId: e.target.value })}><option value="">Elegir...</option>{state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Field>
-                    <Field label="Hacia sucursal" required><select className="select" value={form.toSucursalId} onChange={e => setForm({ ...form, toSucursalId: e.target.value })}><option value="">Elegir...</option>{state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Field>
-                    <Field label="Cantidad" required><input className="input" type="number" value={form.cantidad} onChange={e => setForm({ ...form, cantidad: e.target.value })} /></Field>
+                    <Field label="Origen" required><select className="select" value={form.origenId} onChange={e => setForm({ ...form, origenId: e.target.value })}><option value="">Elegir...</option>{state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Field>
+                    <Field label="Destino" required><select className="select" value={form.destinoId} onChange={e => setForm({ ...form, destinoId: e.target.value })}><option value="">Elegir...</option>{state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Field>
+                    <Field label="Producto" required><select className="select" value={form.productoId} onChange={e => setForm({ ...form, productoId: e.target.value })}><option value="">Elegir...</option>{state.productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></Field>
+                    <Field label="Cantidad"><input className="input" type="number" value={form.cantidad} onChange={e => setForm({ ...form, cantidad: e.target.value })} /></Field>
                 </div>
                 <div className="mt-3"><Field label="Notas"><textarea className="textarea" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} /></Field></div>
-                <div className="flex gap-2 mt-4" style={{ justifyContent: 'flex-end' }}>
+                <div className="flex gap-2 mt-4 justify-end">
                     <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
-                    <button className="btn btn-primary" onClick={save}>Registrar</button>
+                    <button className="btn btn-primary" onClick={save}>Crear</button>
                 </div>
             </Modal>
         </div>
     );
 }
 
-// ═══════════════════════════════ ASISTENCIA ═══════════════════════════════
+// ═══════════════════════════ ASISTENCIA ═══════════════════════════
 export function AsistenciaPage() {
     const { state, actions } = useData();
     const current = state.meta.currentSucursalId || 'all';
-    const asist = filterBySucursal(state.asistencia, current).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-    const empleados = filterBySucursal(state.empleados, current);
-    const EMPTY = { fecha: new Date().toISOString().slice(0, 10), empleadoId: '', sucursalId: '', tipo: 'presente', horaEntrada: '', horaSalida: '', notas: '' };
     const [open, setOpen] = useState(false);
+    const EMPTY = { fecha: new Date().toISOString().slice(0, 10), empleadoId: '', tipo: 'presente', notas: '' };
     const [form, setForm] = useState(EMPTY);
 
+    const empleados = filterBySucursal(state.empleados, current);
+    const asistencia = state.asistencia.filter(a => empleados.some(e => e.id === a.empleadoId)).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+
+    const TIPOS = [
+        { id: 'presente', label: 'Presente', variant: 'success' },
+        { id: 'ausente', label: 'Ausente', variant: 'danger' },
+        { id: 'tardanza', label: 'Tardanza', variant: 'warning' },
+        { id: 'licencia', label: 'Licencia', variant: 'info' },
+        { id: 'feriado', label: 'Feriado', variant: 'muted' }
+    ];
+
     const save = () => {
-        if (!form.empleadoId) return alert('Elegí un empleado');
-        const emp = state.empleados.find(e => e.id === form.empleadoId);
-        actions.add('asistencia', { ...form, sucursalId: emp?.sucursalId || form.sucursalId });
+        if (!form.empleadoId) return alert('Elegí empleado');
+        actions.add('asistencia', form);
         setOpen(false);
     };
 
     return (
-        <div className="flex-col gap-4">
-            <Card title="Asistencia" subtitle="Registro de presentes, ausencias y horarios"
-                actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setOpen(true); }} disabled={empleados.length === 0}><Plus size={14} /> Marcar asistencia</button>}>
+        <div>
+            <PageHeader
+                icon={UserCheck}
+                title="Asistencia"
+                subtitle="Presentismo del equipo"
+                help={SECTION_HELP.asistencia}
+                actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setOpen(true); }} disabled={empleados.length === 0}><Plus size={14} /> Registrar</button>}
+            />
+            <Card>
                 {empleados.length === 0 ? (
-                    <EmptyState icon={Calendar} title="Primero cargá empleados" />
-                ) : asist.length === 0 ? (
-                    <EmptyState icon={Calendar} title="Sin registros de asistencia" tips={['Marca diaria: presente, ausente, tardanza, licencia', 'Hora de entrada y salida', 'Filtro por sucursal', 'En Informes: % asistencia por empleado']} />
+                    <EmptyState icon={UserCheck} title="Primero cargá empleados" description="Necesitás tener empleados para registrar asistencia." />
+                ) : asistencia.length === 0 ? (
+                    <EmptyState icon={UserCheck} title="Sin registros" description="Marcá día a día quién vino a trabajar." action={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={14} /> Primer registro</button>} tips={['Presente, ausente, tardanza, licencia, feriado', 'Histórico completo por empleado', '% de asistencia en Informes']} example="Ej: Viernes 18/04 - Juan Pérez - Presente" />
                 ) : (
                     <div className="table-wrap">
                         <table className="table">
-                            <thead><tr><th>Fecha</th><th>Empleado</th><th>Sucursal</th><th>Tipo</th><th>Entrada</th><th>Salida</th><th>Notas</th><th></th></tr></thead>
+                            <thead><tr><th>Fecha</th><th>Empleado</th><th>Tipo</th><th>Notas</th><th></th></tr></thead>
                             <tbody>
-                                {asist.slice(0, 100).map(a => (
-                                    <tr key={a.id}>
-                                        <td>{fmtDate(a.fecha)}</td>
-                                        <td>{(() => { const e = state.empleados.find(x => x.id === a.empleadoId); return e ? `${e.nombre} ${e.apellido || ''}` : '—'; })()}</td>
-                                        <td className="text-sm">{state.sucursales.find(s => s.id === a.sucursalId)?.nombre || '—'}</td>
-                                        <td><Badge variant={a.tipo === 'presente' ? 'success' : a.tipo === 'ausente' ? 'danger' : 'warning'}>{a.tipo}</Badge></td>
-                                        <td className="text-sm">{a.horaEntrada || '—'}</td>
-                                        <td className="text-sm">{a.horaSalida || '—'}</td>
-                                        <td className="text-xs text-muted">{a.notas}</td>
-                                        <td style={{ textAlign: 'right' }}><button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar?')) actions.remove('asistencia', a.id); }}><Trash2 size={13} /></button></td>
-                                    </tr>
-                                ))}
+                                {asistencia.slice(0, 100).map(a => {
+                                    const emp = state.empleados.find(e => e.id === a.empleadoId);
+                                    const tipo = TIPOS.find(t => t.id === a.tipo) || TIPOS[0];
+                                    return (
+                                        <tr key={a.id}>
+                                            <td className="text-sm">{fmtDate(a.fecha)}</td>
+                                            <td>{emp ? `${emp.nombre} ${emp.apellido || ''}` : '—'}</td>
+                                            <td><Badge variant={tipo.variant}>{tipo.label}</Badge></td>
+                                            <td className="text-sm text-muted">{a.notas || '—'}</td>
+                                            <td style={{ textAlign: 'right' }}><button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar?')) actions.remove('asistencia', a.id); }}><Trash2 size={13} /></button></td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -377,76 +413,111 @@ export function AsistenciaPage() {
             <Modal open={open} onClose={() => setOpen(false)} title="Registrar asistencia">
                 <div className="form-grid">
                     <Field label="Fecha"><input className="input" type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></Field>
-                    <Field label="Empleado" required><select className="select" value={form.empleadoId} onChange={e => setForm({ ...form, empleadoId: e.target.value })}><option value="">Elegir...</option>{state.empleados.map(e => <option key={e.id} value={e.id}>{e.nombre} {e.apellido}</option>)}</select></Field>
-                    <Field label="Tipo"><select className="select" value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}><option value="presente">Presente</option><option value="ausente">Ausente</option><option value="tardanza">Tardanza</option><option value="licencia">Licencia</option><option value="feriado">Feriado</option></select></Field>
-                    <Field label="Hora entrada"><input className="input" type="time" value={form.horaEntrada} onChange={e => setForm({ ...form, horaEntrada: e.target.value })} /></Field>
-                    <Field label="Hora salida"><input className="input" type="time" value={form.horaSalida} onChange={e => setForm({ ...form, horaSalida: e.target.value })} /></Field>
+                    <Field label="Empleado" required><select className="select" value={form.empleadoId} onChange={e => setForm({ ...form, empleadoId: e.target.value })}><option value="">Elegir...</option>{empleados.map(e => <option key={e.id} value={e.id}>{e.nombre} {e.apellido || ''}</option>)}</select></Field>
+                    <Field label="Tipo"><select className="select" value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>{TIPOS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</select></Field>
                 </div>
                 <div className="mt-3"><Field label="Notas"><textarea className="textarea" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} /></Field></div>
-                <div className="flex gap-2 mt-4" style={{ justifyContent: 'flex-end' }}>
+                <div className="flex gap-2 mt-4 justify-end">
                     <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
-                    <button className="btn btn-primary" onClick={save}>Guardar</button>
+                    <button className="btn btn-primary" onClick={save}>Registrar</button>
                 </div>
             </Modal>
         </div>
     );
 }
 
-// ═══════════════════════════════ PEDIDOS ONLINE ═══════════════════════════════
+// ═══════════════════════════ PEDIDOS ONLINE ═══════════════════════════
 export function PedidosPage() {
     const { state, actions } = useData();
-    const EMPTY = { fecha: new Date().toISOString().slice(0, 10), clienteId: '', canal: 'Web', estado: 'pendiente', total: '', direccion: '', notas: '', sucursalId: '' };
+    const labels = getRubroLabels(state.business.rubro);
+    const current = state.meta.currentSucursalId || 'all';
     const [open, setOpen] = useState(false);
+    const [editId, setEditId] = useState(null);
+    const EMPTY = { fecha: new Date().toISOString().slice(0, 10), canal: 'WhatsApp', clienteNombre: '', clienteTel: '', total: '', estado: 'pendiente', sucursalId: '', notas: '' };
     const [form, setForm] = useState(EMPTY);
-    const pedidos = (state.pedidos || []).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+
+    const CANALES = ['WhatsApp', 'Instagram', 'Web propia', 'Mercado Libre', 'PedidosYa', 'Rappi', 'Tienda Nube', 'Otro'];
+    const ESTADOS = [
+        { id: 'pendiente', label: 'Pendiente', variant: 'warning' },
+        { id: 'preparando', label: 'Preparando', variant: 'info' },
+        { id: 'enviado', label: 'Enviado', variant: 'default' },
+        { id: 'entregado', label: 'Entregado', variant: 'success' },
+        { id: 'cancelado', label: 'Cancelado', variant: 'danger' }
+    ];
+
+    const pedidos = filterBySucursal(state.pedidos, current).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
 
     const save = () => {
+        if (!form.clienteNombre.trim()) return alert('Nombre del cliente');
+        if (!form.sucursalId) return alert('Sucursal obligatoria');
         const patch = { ...form, total: Number(form.total || 0) };
-        actions.add('pedidos', patch);
+        if (editId) actions.update('pedidos', editId, patch);
+        else actions.add('pedidos', patch);
         setOpen(false);
     };
 
     return (
-        <div className="flex-col gap-4">
-            <Card title="Pedidos online" subtitle="Web, WhatsApp, Instagram, delivery apps"
-                actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setOpen(true); }}><Plus size={14} /> Nuevo pedido</button>}>
+        <div>
+            <PageHeader
+                icon={ShoppingBag}
+                title={labels.orders}
+                subtitle="Pedidos de canales digitales"
+                help={SECTION_HELP.pedidos}
+                actions={<button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}><Plus size={14} /> Nuevo pedido</button>}
+            />
+            <div className="kpi-grid mb-4">
+                <KpiCard icon={<ShoppingBag size={20} />} label="Pedidos totales" value={pedidos.length} color="#14b8a6" />
+                <KpiCard icon={<ShoppingBag size={20} />} label="Pendientes" value={pedidos.filter(p => p.estado === 'pendiente').length} color="#f59e0b" />
+                <KpiCard icon={<ShoppingBag size={20} />} label="En curso" value={pedidos.filter(p => ['preparando', 'enviado'].includes(p.estado)).length} color="#0ea5e9" />
+                <KpiCard icon={<ShoppingBag size={20} />} label="Entregados" value={pedidos.filter(p => p.estado === 'entregado').length} color="#22c55e" />
+            </div>
+            <Card>
                 {pedidos.length === 0 ? (
-                    <EmptyState icon={ClipboardList} title="Sin pedidos online" tips={['Pedidos por canal (Web, WA, IG, PedidosYa, Rappi)', 'Estados: pendiente → preparando → enviado → entregado', 'Total, dirección y cliente', 'Asignado a una sucursal para el fulfillment']} />
+                    <EmptyState icon={ShoppingBag} title="Sin pedidos" description="Registrá los pedidos que llegan por WhatsApp, IG, apps de delivery o tu web." action={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={14} /> Primer pedido</button>} tips={['Canal de origen (WA, IG, web, delivery apps)', 'Cliente y datos de contacto', 'Estados: pendiente → preparando → enviado → entregado', 'KPIs por estado']} example="Ej: Pedido WhatsApp de María López - Total $8.500 - Estado Preparando" />
                 ) : (
                     <div className="table-wrap">
                         <table className="table">
-                            <thead><tr><th>Fecha</th><th>Cliente</th><th>Canal</th><th>Estado</th><th>Sucursal</th><th style={{ textAlign: 'right' }}>Total</th><th></th></tr></thead>
+                            <thead><tr><th>Fecha</th><th>Canal</th><th>Cliente</th><th>Sucursal</th><th>Estado</th><th style={{ textAlign: 'right' }}>Total</th><th></th></tr></thead>
                             <tbody>
-                                {pedidos.map(p => (
-                                    <tr key={p.id}>
-                                        <td>{fmtDate(p.fecha)}</td>
-                                        <td className="text-sm">{state.clientes.find(c => c.id === p.clienteId)?.nombre || '—'}</td>
-                                        <td><Badge>{p.canal}</Badge></td>
-                                        <td><Badge variant={p.estado === 'entregado' ? 'success' : p.estado === 'pendiente' ? 'warning' : 'info'}>{p.estado}</Badge></td>
-                                        <td className="text-sm">{state.sucursales.find(s => s.id === p.sucursalId)?.nombre || '—'}</td>
-                                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(p.total, state.business.moneda)}</td>
-                                        <td style={{ textAlign: 'right' }}><button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar?')) actions.remove('pedidos', p.id); }}><Trash2 size={13} /></button></td>
-                                    </tr>
-                                ))}
+                                {pedidos.map(p => {
+                                    const estado = ESTADOS.find(e => e.id === p.estado) || ESTADOS[0];
+                                    return (
+                                        <tr key={p.id}>
+                                            <td className="text-sm">{fmtDate(p.fecha)}</td>
+                                            <td><Badge>{p.canal}</Badge></td>
+                                            <td>
+                                                <div className="font-semibold">{p.clienteNombre}</div>
+                                                {p.clienteTel && <div className="text-xs text-muted">{p.clienteTel}</div>}
+                                            </td>
+                                            <td className="text-sm">{state.sucursales.find(s => s.id === p.sucursalId)?.nombre || '—'}</td>
+                                            <td><Badge variant={estado.variant}>{estado.label}</Badge></td>
+                                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(p.total, state.business.moneda)}</td>
+                                            <td style={{ textAlign: 'right' }}>
+                                                <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setForm({ ...EMPTY, ...p }); setEditId(p.id); setOpen(true); }}><Pencil size={13} /></button>
+                                                <button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar?')) actions.remove('pedidos', p.id); }}><Trash2 size={13} /></button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
                 )}
             </Card>
-            <Modal open={open} onClose={() => setOpen(false)} title="Nuevo pedido">
+            <Modal open={open} onClose={() => setOpen(false)} title={editId ? 'Editar pedido' : 'Nuevo pedido'}>
                 <div className="form-grid">
                     <Field label="Fecha"><input className="input" type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></Field>
-                    <Field label="Canal"><select className="select" value={form.canal} onChange={e => setForm({ ...form, canal: e.target.value })}>{['Web', 'WhatsApp', 'Instagram', 'PedidosYa', 'Rappi', 'Otro'].map(c => <option key={c}>{c}</option>)}</select></Field>
-                    <Field label="Cliente"><select className="select" value={form.clienteId} onChange={e => setForm({ ...form, clienteId: e.target.value })}><option value="">Sin especificar</option>{state.clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></Field>
-                    <Field label="Estado"><select className="select" value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })}>{['pendiente', 'preparando', 'enviado', 'entregado', 'cancelado'].map(e => <option key={e}>{e}</option>)}</select></Field>
-                    <Field label="Sucursal"><select className="select" value={form.sucursalId} onChange={e => setForm({ ...form, sucursalId: e.target.value })}><option value="">Sin asignar</option>{state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Field>
+                    <Field label="Canal"><select className="select" value={form.canal} onChange={e => setForm({ ...form, canal: e.target.value })}>{CANALES.map(c => <option key={c}>{c}</option>)}</select></Field>
+                    <Field label="Cliente" required><input className="input" value={form.clienteNombre} onChange={e => setForm({ ...form, clienteNombre: e.target.value })} /></Field>
+                    <Field label="Teléfono"><input className="input" value={form.clienteTel} onChange={e => setForm({ ...form, clienteTel: e.target.value })} /></Field>
                     <Field label="Total"><input className="input" type="number" value={form.total} onChange={e => setForm({ ...form, total: e.target.value })} /></Field>
+                    <Field label="Sucursal" required><select className="select" value={form.sucursalId} onChange={e => setForm({ ...form, sucursalId: e.target.value })}><option value="">Elegir...</option>{state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Field>
+                    <Field label="Estado"><select className="select" value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })}>{ESTADOS.map(e => <option key={e.id} value={e.id}>{e.label}</option>)}</select></Field>
                 </div>
-                <div className="mt-3"><Field label="Dirección"><input className="input" value={form.direccion} onChange={e => setForm({ ...form, direccion: e.target.value })} /></Field></div>
                 <div className="mt-3"><Field label="Notas"><textarea className="textarea" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} /></Field></div>
-                <div className="flex gap-2 mt-4" style={{ justifyContent: 'flex-end' }}>
+                <div className="flex gap-2 mt-4 justify-end">
                     <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
-                    <button className="btn btn-primary" onClick={save}>Crear</button>
+                    <button className="btn btn-primary" onClick={save}>{editId ? 'Guardar' : 'Crear'}</button>
                 </div>
             </Modal>
         </div>

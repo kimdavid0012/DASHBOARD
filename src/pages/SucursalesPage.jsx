@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
 import { Store, Plus, Pencil, Trash2, MapPin, Phone, User as UserIcon } from 'lucide-react';
-import { useData } from '../store/DataContext';
-import { Card, Modal, Field, EmptyState, Badge, KpiCard } from '../components/UI';
+import { useData, SECTION_HELP } from '../store/DataContext';
+import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard } from '../components/UI';
+
+const PROVINCIAS = ['Buenos Aires', 'CABA', 'Catamarca', 'Chaco', 'Chubut', 'Córdoba', 'Corrientes', 'Entre Ríos', 'Formosa', 'Jujuy', 'La Pampa', 'La Rioja', 'Mendoza', 'Misiones', 'Neuquén', 'Río Negro', 'Salta', 'San Juan', 'San Luis', 'Santa Cruz', 'Santa Fe', 'Santiago del Estero', 'Tierra del Fuego', 'Tucumán'];
 
 const EMPTY = {
     nombre: '', direccion: '', ciudad: '', provincia: 'Buenos Aires', pais: 'Argentina',
     telefono: '', responsable: '', horario: '', tipo: 'local',
     activa: true, notas: ''
 };
-
-const PROVINCIAS = ['Buenos Aires', 'CABA', 'Catamarca', 'Chaco', 'Chubut', 'Córdoba', 'Corrientes', 'Entre Ríos', 'Formosa', 'Jujuy', 'La Pampa', 'La Rioja', 'Mendoza', 'Misiones', 'Neuquén', 'Río Negro', 'Salta', 'San Juan', 'San Luis', 'Santa Cruz', 'Santa Fe', 'Santiago del Estero', 'Tierra del Fuego', 'Tucumán'];
 
 export default function SucursalesPage() {
     const { state, actions } = useData();
@@ -32,7 +32,6 @@ export default function SucursalesPage() {
         actions.remove('sucursales', id);
     };
 
-    // Stats per sucursal
     const statsFor = (sucId) => {
         const ventas = state.ventas.filter(v => v.sucursalId === sucId);
         const empleados = state.empleados.filter(e => e.sucursalId === sucId);
@@ -43,43 +42,45 @@ export default function SucursalesPage() {
     const sucursales = state.sucursales || [];
 
     return (
-        <div className="flex-col gap-4">
-            <div className="kpi-grid">
+        <div>
+            <PageHeader
+                icon={Store}
+                title="Sucursales"
+                subtitle="Locales, depósitos y tiendas online"
+                help={SECTION_HELP.sucursales}
+                actions={<button className="btn btn-primary" onClick={openNew}><Plus size={14} /> Nueva sucursal</button>}
+            />
+
+            <div className="kpi-grid mb-4">
                 <KpiCard icon={<Store size={20} />} label="Sucursales totales" value={sucursales.length} color="#14b8a6" />
                 <KpiCard icon={<Store size={20} />} label="Activas" value={sucursales.filter(s => s.activa).length} color="#22c55e" />
-                <KpiCard icon={<UserIcon size={20} />} label="Empleados asignados" value={state.empleados.length} color="#0ea5e9" />
-                <KpiCard icon={<MapPin size={20} />} label="Ciudades" value={new Set(sucursales.map(s => s.ciudad).filter(Boolean)).size} color="#a855f7" />
+                <KpiCard icon={<UserIcon size={20} />} label="Empleados totales" value={state.empleados.length} color="#0ea5e9" />
+                <KpiCard icon={<MapPin size={20} />} label="Ciudades cubiertas" value={new Set(sucursales.map(s => s.ciudad).filter(Boolean)).size} color="#a855f7" />
             </div>
 
-            <Card
-                title="Sucursales"
-                subtitle="Gestión de puntos de venta, depósitos y locales"
-                actions={<button className="btn btn-primary" onClick={openNew}><Plus size={14} /> Nueva sucursal</button>}
-            >
+            <Card>
                 {sucursales.length === 0 ? (
                     <EmptyState
                         icon={Store}
-                        title="Todavía no tenés sucursales cargadas"
-                        description="Creá tu primera sucursal para empezar a registrar ventas, inventario y empleados."
+                        title="Todavía no tenés sucursales"
+                        description="Creá tu primera sucursal para empezar. Todo el sistema funciona alrededor de esto."
                         action={<button className="btn btn-primary" onClick={openNew}><Plus size={14} /> Crear mi primera sucursal</button>}
                         tips={[
-                            'Una lista con todas tus sucursales (nombre, dirección, teléfono)',
-                            'KPIs por sucursal: ventas del mes, empleados asignados, stock',
-                            'Selector global en la barra superior para filtrar toda la app por sucursal',
-                            'Si tenés un solo local, igual cargalo — así después podés escalar fácil'
+                            'Nombre, dirección y ciudad de cada local',
+                            'Tipo: local / depósito / oficina / online',
+                            'Responsable y horario de atención',
+                            'Estadísticas automáticas: ventas, empleados',
+                            'Selector en la barra superior para filtrar toda la app'
                         ]}
+                        example="Si tenés 1 local: 'Casa central - Av. Corrientes 1234, CABA'. Si tenés varios: 'Sucursal Palermo', 'Sucursal Belgrano', etc."
                     />
                 ) : (
                     <div className="table-wrap">
                         <table className="table">
                             <thead>
                                 <tr>
-                                    <th>Sucursal</th>
-                                    <th>Ubicación</th>
-                                    <th>Contacto</th>
-                                    <th>Ventas</th>
-                                    <th>Empleados</th>
-                                    <th>Estado</th>
+                                    <th>Sucursal</th><th>Ubicación</th><th>Contacto</th>
+                                    <th>Ventas</th><th>Empleados</th><th>Estado</th>
                                     <th style={{ textAlign: 'right' }}>Acciones</th>
                                 </tr>
                             </thead>
@@ -90,7 +91,7 @@ export default function SucursalesPage() {
                                         <tr key={s.id}>
                                             <td>
                                                 <div className="font-semibold">{s.nombre}</div>
-                                                <div className="text-xs text-muted">{s.tipo === 'local' ? 'Local' : s.tipo === 'deposito' ? 'Depósito' : s.tipo}</div>
+                                                <div className="text-xs text-muted">{s.tipo === 'local' ? 'Local / PDV' : s.tipo === 'deposito' ? 'Depósito' : s.tipo}</div>
                                             </td>
                                             <td>
                                                 <div className="text-sm">{s.direccion}</div>
@@ -98,7 +99,7 @@ export default function SucursalesPage() {
                                             </td>
                                             <td>
                                                 {s.telefono && <div className="text-sm flex items-center gap-1"><Phone size={11} /> {s.telefono}</div>}
-                                                {s.responsable && <div className="text-xs text-muted">Responsable: {s.responsable}</div>}
+                                                {s.responsable && <div className="text-xs text-muted">A cargo: {s.responsable}</div>}
                                             </td>
                                             <td><div className="font-semibold">{st.ventasCount}</div><div className="text-xs text-muted">operaciones</div></td>
                                             <td><div className="font-semibold">{st.empleadosCount}</div></td>
@@ -118,7 +119,7 @@ export default function SucursalesPage() {
 
             <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Editar sucursal' : 'Nueva sucursal'}>
                 <div className="form-grid">
-                    <Field label="Nombre" required><input className="input" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} autoFocus /></Field>
+                    <Field label="Nombre" required hint="Ej: Casa Central, Sucursal Palermo"><input className="input" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} autoFocus /></Field>
                     <Field label="Tipo">
                         <select className="select" value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>
                             <option value="local">Local / Punto de venta</option>
@@ -147,7 +148,7 @@ export default function SucursalesPage() {
                 <div className="mt-3">
                     <Field label="Notas"><textarea className="textarea" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} /></Field>
                 </div>
-                <div className="flex gap-2 mt-4" style={{ justifyContent: 'flex-end' }}>
+                <div className="flex gap-2 mt-4 justify-end">
                     <button className="btn btn-ghost" onClick={() => setModalOpen(false)}>Cancelar</button>
                     <button className="btn btn-primary" onClick={save}>{editingId ? 'Guardar' : 'Crear'}</button>
                 </div>

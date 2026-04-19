@@ -1,5 +1,5 @@
-import React from 'react';
-import { X as XIcon, Inbox } from 'lucide-react';
+import React, { useState } from 'react';
+import { X as XIcon, Inbox, HelpCircle, Info } from 'lucide-react';
 
 export function Card({ title, subtitle, actions, children, style }) {
     return (
@@ -10,10 +10,60 @@ export function Card({ title, subtitle, actions, children, style }) {
                         {title && <h3 className="card-title">{title}</h3>}
                         {subtitle && <p className="card-subtitle">{subtitle}</p>}
                     </div>
-                    {actions && <div className="flex gap-2">{actions}</div>}
+                    {actions && <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>{actions}</div>}
                 </div>
             )}
             {children}
+        </div>
+    );
+}
+
+// Page header with title, subtitle, and contextual help
+export function PageHeader({ icon: Icon, title, subtitle, help, actions }) {
+    const [showHelp, setShowHelp] = useState(false);
+    return (
+        <div className="page-header">
+            <div className="page-header-left">
+                {Icon && (
+                    <div className="page-header-icon">
+                        <Icon size={20} />
+                    </div>
+                )}
+                <div>
+                    <div className="flex items-center gap-2">
+                        <h1 className="page-header-title">{title}</h1>
+                        {help && (
+                            <button
+                                className="help-btn"
+                                onClick={() => setShowHelp(!showHelp)}
+                                title="¿Qué hace esta sección?"
+                            >
+                                <HelpCircle size={16} />
+                            </button>
+                        )}
+                    </div>
+                    {subtitle && <p className="page-header-subtitle">{subtitle}</p>}
+                </div>
+            </div>
+            {actions && <div className="page-header-actions">{actions}</div>}
+
+            {showHelp && help && (
+                <div className="help-panel">
+                    <div className="help-panel-close" onClick={() => setShowHelp(false)}>
+                        <XIcon size={14} />
+                    </div>
+                    <div className="help-panel-section">
+                        <div className="help-panel-label">📌 ¿Qué es esto?</div>
+                        <div className="help-panel-text">{help.what}</div>
+                    </div>
+                    {help.how && (
+                        <div className="help-panel-section">
+                            <div className="help-panel-label">💡 ¿Cómo se usa?</div>
+                            <div className="help-panel-text">{help.how}</div>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
@@ -39,14 +89,14 @@ export function Field({ label, children, required, hint }) {
         <label className="field">
             <span className="field-label">{label}{required && <span style={{ color: 'var(--danger)' }}> *</span>}</span>
             {children}
-            {hint && <span className="text-xs text-muted">{hint}</span>}
+            {hint && <span className="field-hint">{hint}</span>}
         </label>
     );
 }
 
-export function KpiCard({ icon, label, value, delta, color = '#14b8a6' }) {
+export function KpiCard({ icon, label, value, delta, color = '#14b8a6', hint }) {
     return (
-        <div className="kpi-card">
+        <div className="kpi-card" title={hint || ''}>
             <div className="kpi-icon" style={{ background: `${color}20`, color }}>{icon}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="kpi-label">{label}</div>
@@ -57,17 +107,23 @@ export function KpiCard({ icon, label, value, delta, color = '#14b8a6' }) {
     );
 }
 
-export function EmptyState({ icon: Icon = Inbox, title, description, action, tips }) {
+export function EmptyState({ icon: Icon = Inbox, title, description, action, tips, example }) {
     return (
         <div className="empty-state">
             <div className="empty-state-icon"><Icon size={26} /></div>
             <div className="empty-state-title">{title}</div>
-            {description && <div style={{ maxWidth: 420, margin: '0 auto', marginTop: 4 }}>{description}</div>}
+            {description && <div className="empty-state-desc">{description}</div>}
             {action && <div className="mt-3">{action}</div>}
             {tips && (
                 <div className="empty-state-tips">
-                    <strong>¿Qué vas a ver acá cuando tengas datos?</strong>
+                    <strong>📊 ¿Qué vas a ver acá cuando tengas datos?</strong>
                     <ul>{tips.map((t, i) => <li key={i}>{t}</li>)}</ul>
+                </div>
+            )}
+            {example && (
+                <div className="empty-state-example">
+                    <strong>🎯 Ejemplo típico:</strong>
+                    <div className="mt-2">{example}</div>
                 </div>
             )}
         </div>
@@ -77,6 +133,25 @@ export function EmptyState({ icon: Icon = Inbox, title, description, action, tip
 export function Badge({ children, variant = 'default' }) {
     const cls = variant === 'default' ? 'badge' : `badge badge-${variant}`;
     return <span className={cls}>{children}</span>;
+}
+
+// Inline info box (sits inline with content, not collapsible)
+export function InfoBox({ icon: Icon = Info, children, variant = 'info' }) {
+    const colors = {
+        info: { bg: 'rgba(14,165,233,0.08)', border: 'rgba(14,165,233,0.25)', color: '#0ea5e9' },
+        warning: { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)', color: '#f59e0b' },
+        success: { bg: 'rgba(34,197,94,0.08)', border: 'rgba(34,197,94,0.25)', color: '#22c55e' }
+    }[variant];
+    return (
+        <div style={{
+            background: colors.bg, border: `1px solid ${colors.border}`,
+            borderRadius: 10, padding: 12, display: 'flex', gap: 10,
+            alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5
+        }}>
+            <Icon size={16} color={colors.color} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div style={{ flex: 1 }}>{children}</div>
+        </div>
+    );
 }
 
 // ───────────── Native SVG charts ─────────────
@@ -90,9 +165,7 @@ export function PieChart({ data, size = 180 }) {
                 border: '1px dashed var(--border-strong)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 color: 'var(--text-muted)', fontSize: 12, margin: '0 auto'
-            }}>
-                Sin datos
-            </div>
+            }}>Sin datos</div>
         );
     }
     const radius = size / 2;
@@ -115,7 +188,7 @@ export function PieChart({ data, size = 180 }) {
     return <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>{paths}</svg>;
 }
 
-export function BarChart({ data, maxValue, height = 200 }) {
+export function BarChart({ data, maxValue }) {
     if (!data.length) {
         return <div className="text-muted text-xs" style={{ textAlign: 'center', padding: 20 }}>Sin datos</div>;
     }
@@ -159,10 +232,8 @@ export function LineChart({ series, height = 180, labels = [] }) {
 
     return (
         <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ display: 'block' }}>
-            {/* Gridlines */}
             {[0, 0.5, 1].map((frac, i) => (
-                <line
-                    key={i}
+                <line key={i}
                     x1={padding} x2={width - padding}
                     y1={height - padding - frac * (height - 2 * padding)}
                     y2={height - padding - frac * (height - 2 * padding)}
@@ -180,7 +251,6 @@ export function LineChart({ series, height = 180, labels = [] }) {
                     </g>
                 );
             })}
-            {/* X axis labels */}
             {labels.map((l, i) => (
                 <text key={i} x={toX(i)} y={height - 8} textAnchor="middle" fontSize="10" fill="var(--text-muted)">{l}</text>
             ))}
@@ -188,7 +258,6 @@ export function LineChart({ series, height = 180, labels = [] }) {
     );
 }
 
-// Helpers
 export const fmtMoney = (n, currency = 'ARS') => {
     const num = Number(n || 0);
     const symbol = currency === 'ARS' ? '$' : currency === 'USD' ? 'US$' : '';

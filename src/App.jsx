@@ -1,178 +1,230 @@
 import React, { useState } from 'react';
 import {
-    LayoutDashboard, Store, Users, UserPlus, Truck, Package, ShoppingCart,
-    ClipboardList, Wallet, Repeat, TrendingDown, Calendar, ListTodo,
-    BarChart3, Megaphone, Bot, Instagram, Music2, Globe, Landmark,
-    Settings as SettingsIcon
+    Home, BarChart3, Store, UserCog, Users, UserCheck, CheckSquare,
+    ShoppingCart, Receipt, ShoppingBag, PiggyBank, ArrowRightLeft,
+    DollarSign, Landmark, Truck, Users2, Megaphone, Bot,
+    Instagram, Music2, Globe, Settings as SettingsIcon, Menu,
+    Armchair, CalendarClock
 } from 'lucide-react';
-
-import { DataProvider, useData } from './store/DataContext';
-import OnboardingModal from './components/OnboardingModal';
-
+import { DataProvider, useData, getRubroLabels, getRubroConfig, shouldShowSection } from './store/DataContext';
 import DashboardHome from './pages/DashboardHome';
+import InformesPage from './pages/InformesPage';
 import SucursalesPage from './pages/SucursalesPage';
 import UsuariosPage from './pages/UsuariosPage';
 import EmpleadosPage from './pages/EmpleadosPage';
-import ProveedoresPage from './pages/ProveedoresPage';
 import ProductosPage from './pages/ProductosPage';
+import POSPage from './pages/POSPage';
 import VentasPage from './pages/VentasPage';
-import InformesPage from './pages/InformesPage';
+import ProveedoresPage from './pages/ProveedoresPage';
 import SettingsPage from './pages/SettingsPage';
-import {
-    ClientesPage, GastosPage, CajaDiariaPage, TransferenciasPage,
-    AsistenciaPage, PedidosPage
-} from './pages/CrudPages';
-import {
-    MarketingPage, AgentsPage, InstagramPage, TikTokPage, AnalyticsPage,
-    WebPage, BankingPage, TareasPage
-} from './pages/StubPages';
+import { ClientesPage, GastosPage, CajaDiariaPage, TransferenciasPage, AsistenciaPage, PedidosPage } from './pages/CrudPages';
+import { MarketingPage, AgentsPage, InstagramPage, TikTokPage, AnalyticsPage, WebPage, BankingPage, TareasPage } from './pages/StubPages';
+import { MesasPage, ReservasPage } from './pages/RestaurantPages';
+import OnboardingModal from './components/OnboardingModal';
 
-// Sidebar navigation configuration
-const NAV = [
-    {
-        section: 'Principal',
-        items: [
-            { id: 'home', label: 'Inicio', icon: LayoutDashboard, component: DashboardHome },
-            { id: 'informes', label: 'Informes', icon: BarChart3, component: InformesPage }
-        ]
-    },
-    {
-        section: 'Negocio',
-        items: [
-            { id: 'sucursales', label: 'Sucursales', icon: Store, component: SucursalesPage },
-            { id: 'usuarios', label: 'Cuentas', icon: UserPlus, component: UsuariosPage },
-            { id: 'empleados', label: 'Empleados', icon: Users, component: EmpleadosPage },
-            { id: 'asistencia', label: 'Asistencia', icon: Calendar, component: AsistenciaPage },
-            { id: 'tareas', label: 'Tareas', icon: ListTodo, component: TareasPage }
-        ]
-    },
-    {
-        section: 'Operaciones',
-        items: [
-            { id: 'productos', label: 'Productos', icon: Package, component: ProductosPage },
-            { id: 'ventas', label: 'Ventas', icon: ShoppingCart, component: VentasPage },
-            { id: 'pedidos', label: 'Pedidos online', icon: ClipboardList, component: PedidosPage },
-            { id: 'caja', label: 'Caja diaria', icon: Wallet, component: CajaDiariaPage },
-            { id: 'transferencias', label: 'Transferencias', icon: Repeat, component: TransferenciasPage }
-        ]
-    },
-    {
-        section: 'Finanzas',
-        items: [
-            { id: 'gastos', label: 'Gastos', icon: TrendingDown, component: GastosPage },
-            { id: 'banking', label: 'Banco', icon: Landmark, component: BankingPage },
-            { id: 'proveedores', label: 'Proveedores', icon: Truck, component: ProveedoresPage }
-        ]
-    },
-    {
-        section: 'Clientes & Marketing',
-        items: [
-            { id: 'clientes', label: 'Clientes', icon: Users, component: ClientesPage },
-            { id: 'marketing', label: 'Marketing', icon: Megaphone, component: MarketingPage },
-            { id: 'agents', label: 'Agentes AI', icon: Bot, component: AgentsPage },
-            { id: 'instagram', label: 'Instagram', icon: Instagram, component: InstagramPage },
-            { id: 'tiktok', label: 'TikTok', icon: Music2, component: TikTokPage },
-            { id: 'analytics', label: 'Google Analytics', icon: BarChart3, component: AnalyticsPage },
-            { id: 'web', label: 'Tienda online', icon: Globe, component: WebPage }
-        ]
-    },
-    {
-        section: 'Sistema',
-        items: [
-            { id: 'settings', label: 'Configuración', icon: SettingsIcon, component: SettingsPage }
-        ]
-    }
-];
-
-const ALL_ITEMS = NAV.flatMap(s => s.items);
-
-function AppShell() {
+function AppContent() {
     const { state, actions, hydrated } = useData();
-    const [viewId, setViewId] = useState('home');
+    const [page, setPage] = useState('home');
 
-    if (!hydrated) {
-        return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Cargando...</div>;
-    }
+    if (!hydrated) return null;
 
     const showOnboarding = !state.meta.onboarded;
-    const currentItem = ALL_ITEMS.find(i => i.id === viewId) || ALL_ITEMS[0];
-    const Component = currentItem.component;
+    const labels = getRubroLabels(state.business.rubro);
+    const rubroConfig = getRubroConfig(state.business.rubro);
+    const rubroName = {
+        general: 'General',
+        kiosco: 'Kiosco',
+        restaurante: 'Restaurante',
+        accesorios: 'Accesorios',
+        servicios: 'Servicios',
+        otro: 'Otro'
+    }[state.business.rubro] || 'General';
 
-    const current = state.meta.currentSucursalId || 'all';
-    const hasMultipleSucursales = (state.sucursales || []).length > 1;
+    // NAV structure with rubro-aware visibility
+    const allNavGroups = [
+        {
+            label: 'Principal',
+            items: [
+                { id: 'home', icon: Home, label: 'Inicio' },
+                { id: 'informes', icon: BarChart3, label: 'Informes' }
+            ]
+        },
+        {
+            label: 'Negocio',
+            items: [
+                { id: 'sucursales', icon: Store, label: 'Sucursales' },
+                { id: 'usuarios', icon: UserCog, label: 'Cuentas' },
+                { id: 'empleados', icon: Users, label: 'Empleados' },
+                { id: 'asistencia', icon: UserCheck, label: 'Asistencia' },
+                { id: 'tareas', icon: CheckSquare, label: 'Tareas' }
+            ]
+        },
+        {
+            label: state.business.rubro === 'restaurante' ? 'Salón' : 'Agenda',
+            items: [
+                { id: 'mesas', icon: Armchair, label: 'Mesas' },
+                { id: 'reservas', icon: CalendarClock, label: 'Reservas' }
+            ]
+        },
+        {
+            label: 'Operaciones',
+            items: [
+                { id: 'productos', icon: () => <span style={{ fontSize: 18 }}>📦</span>, label: labels.items },
+                { id: 'pos', icon: ShoppingCart, label: labels.pos, highlight: true },
+                { id: 'ventas', icon: Receipt, label: `Historial ${labels.sales.toLowerCase()}` },
+                { id: 'pedidos', icon: ShoppingBag, label: labels.orders },
+                { id: 'caja', icon: PiggyBank, label: 'Caja diaria' },
+                { id: 'transferencias', icon: ArrowRightLeft, label: 'Transferencias' }
+            ]
+        },
+        {
+            label: 'Finanzas',
+            items: [
+                { id: 'gastos', icon: DollarSign, label: 'Gastos' },
+                { id: 'banking', icon: Landmark, label: 'Banco' },
+                { id: 'proveedores', icon: Truck, label: 'Proveedores' }
+            ]
+        },
+        {
+            label: 'Clientes & Marketing',
+            items: [
+                { id: 'clientes', icon: Users2, label: labels.clients },
+                { id: 'marketing', icon: Megaphone, label: 'Marketing' },
+                { id: 'agents', icon: Bot, label: 'Agentes AI' },
+                { id: 'instagram', icon: Instagram, label: 'Instagram' },
+                { id: 'tiktok', icon: Music2, label: 'TikTok' },
+                { id: 'analytics', icon: BarChart3, label: 'Analytics' },
+                { id: 'web', icon: Globe, label: 'Tienda online' }
+            ]
+        },
+        {
+            label: 'Sistema',
+            items: [{ id: 'settings', icon: SettingsIcon, label: 'Configuración' }]
+        }
+    ];
+
+    // Filter nav by rubro visibility
+    const NAV_GROUPS = allNavGroups
+        .map(grp => ({
+            ...grp,
+            items: grp.items.filter(item => shouldShowSection(state.business.rubro, item.id))
+        }))
+        .filter(grp => grp.items.length > 0);
+
+    // Renderer
+    const renderPage = () => {
+        // Navigation guard - if rubro hides this section, redirect home
+        if (!shouldShowSection(state.business.rubro, page)) {
+            setTimeout(() => setPage('home'), 0);
+            return null;
+        }
+        switch (page) {
+            case 'home': return <DashboardHome />;
+            case 'informes': return <InformesPage />;
+            case 'sucursales': return <SucursalesPage />;
+            case 'usuarios': return <UsuariosPage />;
+            case 'empleados': return <EmpleadosPage />;
+            case 'asistencia': return <AsistenciaPage />;
+            case 'tareas': return <TareasPage />;
+            case 'mesas': return <MesasPage />;
+            case 'reservas': return <ReservasPage />;
+            case 'productos': return <ProductosPage />;
+            case 'pos': return <POSPage />;
+            case 'ventas': return <VentasPage onNavigate={setPage} />;
+            case 'pedidos': return <PedidosPage />;
+            case 'caja': return <CajaDiariaPage />;
+            case 'transferencias': return <TransferenciasPage />;
+            case 'gastos': return <GastosPage />;
+            case 'banking': return <BankingPage />;
+            case 'proveedores': return <ProveedoresPage />;
+            case 'clientes': return <ClientesPage />;
+            case 'marketing': return <MarketingPage onNavigate={setPage} />;
+            case 'agents': return <AgentsPage onNavigate={setPage} />;
+            case 'instagram': return <InstagramPage onNavigate={setPage} />;
+            case 'tiktok': return <TikTokPage onNavigate={setPage} />;
+            case 'analytics': return <AnalyticsPage onNavigate={setPage} />;
+            case 'web': return <WebPage onNavigate={setPage} />;
+            case 'settings': return <SettingsPage />;
+            default: return <DashboardHome />;
+        }
+    };
+
+    const currentPageLabel = (() => {
+        for (const grp of NAV_GROUPS) {
+            const f = grp.items.find(i => i.id === page);
+            if (f) return f.label;
+        }
+        return 'Inicio';
+    })();
 
     return (
-        <>
-            {showOnboarding && <OnboardingModal />}
-            <div className="app">
-                {/* ───────── SIDEBAR ───────── */}
-                <aside className="sidebar">
-                    <div className="sidebar-brand">
-                        <div className="sidebar-brand-logo">D</div>
-                        <h1>Dashboard</h1>
-                    </div>
-                    <nav className="sidebar-nav">
-                        {NAV.map(section => (
-                            <div key={section.section}>
-                                <div className="sidebar-section-label">{section.section}</div>
-                                {section.items.map(it => {
-                                    const Icon = it.icon;
-                                    return (
-                                        <button
-                                            key={it.id}
-                                            className={`sidebar-item ${viewId === it.id ? 'active' : ''}`}
-                                            onClick={() => setViewId(it.id)}
-                                        >
-                                            <Icon size={18} />
-                                            <span>{it.label}</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        ))}
-                    </nav>
-                    <div className="sidebar-footer">
-                        {state.business.name || 'Dashboard'} · v1.0
-                    </div>
-                </aside>
-
-                {/* ───────── MAIN ───────── */}
-                <main className="main">
-                    <div className="topbar">
-                        <div className="topbar-left">
-                            <div className="topbar-title">{currentItem.label}</div>
-                        </div>
-                        <div className="topbar-right">
-                            {hasMultipleSucursales && (
-                                <div className="sucursal-switcher">
-                                    <Store size={14} color="var(--text-muted)" />
-                                    <select
-                                        value={current}
-                                        onChange={e => actions.setCurrentSucursal(e.target.value)}
+        <div className="app">
+            <aside className="sidebar">
+                <div className="sidebar-brand">
+                    <div className="sidebar-brand-logo">D</div>
+                    <h1>Dashboard</h1>
+                </div>
+                <nav className="sidebar-nav">
+                    {NAV_GROUPS.map(grp => (
+                        <div key={grp.label}>
+                            <div className="sidebar-section-label">{grp.label}</div>
+                            {grp.items.map(item => {
+                                const Icon = item.icon;
+                                return (
+                                    <button
+                                        key={item.id}
+                                        className={`sidebar-item ${page === item.id ? 'active' : ''}`}
+                                        onClick={() => setPage(item.id)}
+                                        style={item.highlight && page !== item.id ? { color: 'var(--accent)', fontWeight: 600 } : {}}
                                     >
-                                        <option value="all">Todas las sucursales</option>
-                                        {state.sucursales.map(s => (
-                                            <option key={s.id} value={s.id}>{s.nombre}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
+                                        <Icon size={18} />
+                                        <span>{item.label}</span>
+                                    </button>
+                                );
+                            })}
                         </div>
-                    </div>
+                    ))}
+                </nav>
+                <div className="sidebar-footer">
+                    <div>{state.business.name || 'Dashboard v1'}</div>
+                    <div className="sidebar-rubro-badge">{rubroName}</div>
+                </div>
+            </aside>
 
-                    <div className="content">
-                        <Component />
+            <div className="main">
+                <div className="topbar">
+                    <div className="topbar-left">
+                        <div className="topbar-title">{currentPageLabel}</div>
                     </div>
-                </main>
+                    <div className="topbar-right">
+                        {state.sucursales.length > 0 && (
+                            <div className="sucursal-switcher">
+                                <Store size={14} style={{ color: 'var(--text-muted)' }} />
+                                <select
+                                    value={state.meta.currentSucursalId || 'all'}
+                                    onChange={e => actions.setCurrentSucursal(e.target.value === 'all' ? null : e.target.value)}
+                                >
+                                    <option value="all">Todas las sucursales</option>
+                                    {state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                                </select>
+                            </div>
+                        )}
+                    </div>
+                </div>
+                <div className="content">
+                    {renderPage()}
+                </div>
             </div>
-        </>
+
+            {showOnboarding && <OnboardingModal />}
+        </div>
     );
 }
 
 export default function App() {
     return (
         <DataProvider>
-            <AppShell />
+            <AppContent />
         </DataProvider>
     );
 }
