@@ -136,7 +136,7 @@ export function Badge({ children, variant = 'default' }) {
 }
 
 // Inline info box (sits inline with content, not collapsible)
-export function InfoBox({ icon: Icon = Info, children, variant = 'info' }) {
+export function InfoBox({ icon: Icon = Info, children, variant = 'info', style: extraStyle }) {
     const colors = {
         info: { bg: 'rgba(14,165,233,0.08)', border: 'rgba(14,165,233,0.25)', color: '#60a5fa' },
         warning: { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)', color: '#f59e0b' },
@@ -146,7 +146,8 @@ export function InfoBox({ icon: Icon = Info, children, variant = 'info' }) {
         <div style={{
             background: colors.bg, border: `1px solid ${colors.border}`,
             borderRadius: 10, padding: 12, display: 'flex', gap: 10,
-            alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5
+            alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5,
+            ...extraStyle
         }}>
             <Icon size={16} color={colors.color} style={{ flexShrink: 0, marginTop: 2 }} />
             <div style={{ flex: 1 }}>{children}</div>

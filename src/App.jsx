@@ -4,7 +4,8 @@ import {
     ShoppingCart, Receipt, ShoppingBag, PiggyBank, ArrowRightLeft,
     DollarSign, Landmark, Truck, Users2, Megaphone, Bot,
     Instagram, Music2, Globe, Settings as SettingsIcon,
-    Armchair, CalendarClock, RotateCcw
+    Armchair, CalendarClock, RotateCcw, FileText, Upload, Shield,
+    CheckCircle2, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { DataProvider, useData, getRubroLabels, getRubroConfig, shouldShowSection } from './store/DataContext';
 import DashboardHome from './pages/DashboardHome';
@@ -17,6 +18,9 @@ import POSPage from './pages/POSPage';
 import VentasPage from './pages/VentasPage';
 import ProveedoresPage from './pages/ProveedoresPage';
 import SettingsPage from './pages/SettingsPage';
+import AfipPage from './pages/AfipPage';
+import DataImportPage from './pages/DataImportPage';
+import BackupPage from './pages/BackupPage';
 import { ClientesPage, GastosPage, CajaDiariaPage, TransferenciasPage, AsistenciaPage, PedidosPage } from './pages/CrudPages';
 import { MarketingPage, AgentsPage, InstagramPage, TikTokPage, AnalyticsPage, WebPage, BankingPage, TareasPage } from './pages/StubPages';
 import { MesasPage, ReservasPage } from './pages/RestaurantPages';
@@ -24,30 +28,71 @@ import OnboardingModal from './components/OnboardingModal';
 import CelaBot from './components/CelaBot';
 
 const RUBRO_EMOJI = {
-    kiosco: '🏪',
-    restaurante: '🍽️',
-    accesorios: '👗',
-    servicios: '💼',
-    general: '🏬',
-    otro: '✨'
+    kiosco: '🏪', restaurante: '🍽️', accesorios: '👗',
+    servicios: '💼', general: '🏬', otro: '✨'
 };
+
+// ── Save indicator chip for topbar ────────────────────────────────
+function SaveIndicator() {
+    const { saveStatus } = useData();
+    if (!saveStatus) return null;
+
+    const { saving, lastSaved, lastError, source } = saveStatus;
+
+    if (saving) {
+        return (
+            <div className="save-indicator saving">
+                <RefreshCw size={12} className="spin" />
+                <span>Guardando…</span>
+            </div>
+        );
+    }
+    if (lastError) {
+        return (
+            <div className="save-indicator error" title={lastError}>
+                <AlertCircle size={12} />
+                <span>Error al guardar</span>
+            </div>
+        );
+    }
+    if (lastSaved) {
+        const secs = Math.floor((Date.now() - new Date(lastSaved).getTime()) / 1000);
+        const ago = secs < 60 ? `${secs}s` : secs < 3600 ? `${Math.floor(secs / 60)}m` : `${Math.floor(secs / 3600)}h`;
+        return (
+            <div className="save-indicator ok" title={`Guardado hace ${ago} en ${source}`}>
+                <CheckCircle2 size={12} />
+                <span>✓ Guardado</span>
+            </div>
+        );
+    }
+    return null;
+}
 
 function AppContent() {
     const { state, actions, hydrated } = useData();
     const [page, setPage] = useState('home');
 
-    if (!hydrated) return null;
+    if (!hydrated) {
+        return (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: 16 }}>
+                <div style={{
+                    width: 48, height: 48, borderRadius: 14,
+                    background: 'linear-gradient(135deg, #63f1cb, #3ddbae)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontFamily: 'var(--font-display)', color: '#0a0a0f', fontSize: 22, fontWeight: 700,
+                    boxShadow: '0 4px 14px rgba(99, 241, 203, 0.3)'
+                }}>D</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Cargando tu data...</div>
+            </div>
+        );
+    }
 
     const showOnboarding = !state.meta.onboarded;
     const labels = getRubroLabels(state.business.rubro);
     const rubroConfig = getRubroConfig(state.business.rubro);
     const rubroName = {
-        general: 'General',
-        kiosco: 'Kiosco',
-        restaurante: 'Restaurante',
-        accesorios: 'Accesorios',
-        servicios: 'Servicios',
-        otro: 'Otro'
+        general: 'General', kiosco: 'Kiosco', restaurante: 'Restaurante',
+        accesorios: 'Accesorios', servicios: 'Servicios', otro: 'Otro'
     }[state.business.rubro] || 'General';
 
     const allNavGroups = [
@@ -87,11 +132,12 @@ function AppContent() {
             ]
         },
         {
-            label: 'Finanzas',
+            label: 'Finanzas & Fiscal',
             items: [
                 { id: 'gastos', icon: DollarSign, label: 'Gastos' },
                 { id: 'banking', icon: Landmark, label: 'Banco' },
-                { id: 'proveedores', icon: Truck, label: 'Proveedores' }
+                { id: 'proveedores', icon: Truck, label: 'Proveedores' },
+                { id: 'afip', icon: FileText, label: 'AFIP · Fiscal' }
             ]
         },
         {
@@ -107,16 +153,17 @@ function AppContent() {
             ]
         },
         {
-            label: 'Sistema',
-            items: [{ id: 'settings', icon: SettingsIcon, label: 'Configuración' }]
+            label: 'Datos & Sistema',
+            items: [
+                { id: 'import', icon: Upload, label: 'Importar Excel' },
+                { id: 'backup', icon: Shield, label: 'Backup & Seguridad', highlight: true },
+                { id: 'settings', icon: SettingsIcon, label: 'Configuración' }
+            ]
         }
     ];
 
     const NAV_GROUPS = allNavGroups
-        .map(grp => ({
-            ...grp,
-            items: grp.items.filter(item => shouldShowSection(state.business.rubro, item.id))
-        }))
+        .map(grp => ({ ...grp, items: grp.items.filter(item => shouldShowSection(state.business.rubro, item.id)) }))
         .filter(grp => grp.items.length > 0);
 
     const renderPage = () => {
@@ -143,6 +190,7 @@ function AppContent() {
             case 'gastos': return <GastosPage />;
             case 'banking': return <BankingPage />;
             case 'proveedores': return <ProveedoresPage />;
+            case 'afip': return <AfipPage />;
             case 'clientes': return <ClientesPage />;
             case 'marketing': return <MarketingPage onNavigate={setPage} />;
             case 'agents': return <AgentsPage onNavigate={setPage} />;
@@ -150,6 +198,8 @@ function AppContent() {
             case 'tiktok': return <TikTokPage onNavigate={setPage} />;
             case 'analytics': return <AnalyticsPage onNavigate={setPage} />;
             case 'web': return <WebPage onNavigate={setPage} />;
+            case 'import': return <DataImportPage />;
+            case 'backup': return <BackupPage />;
             case 'settings': return <SettingsPage />;
             default: return <DashboardHome onNavigate={setPage} />;
         }
@@ -222,6 +272,7 @@ function AppContent() {
                         <div className="topbar-title">{currentPageLabel}</div>
                     </div>
                     <div className="topbar-right">
+                        <SaveIndicator />
                         {state.sucursales.length > 0 && (
                             <div className="sucursal-switcher">
                                 <Store size={14} style={{ color: 'var(--text-muted)' }} />

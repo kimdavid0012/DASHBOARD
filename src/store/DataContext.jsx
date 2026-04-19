@@ -1,5 +1,9 @@
-import React, { createContext, useContext, useEffect, useReducer, useState } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useState, useRef } from 'react';
 import { nanoid } from 'nanoid';
+import {
+    saveState, loadState, pushHistorySnapshot,
+    persistStorage
+} from '../utils/storage';
 
 const STORAGE_KEY = 'dashboard_state_v1';
 
@@ -9,7 +13,14 @@ const DEFAULT_STATE = {
         rubro: 'general',
         moneda: 'ARS',
         pais: 'Argentina',
-        createdAt: null
+        createdAt: null,
+        // Datos fiscales AFIP
+        cuit: '',
+        razonSocial: '',
+        condicionIva: '',  // 'RI' | 'MONOTRIBUTO' | 'EXENTO' | 'CF'
+        ingresosBrutos: '',
+        puntoVenta: '0001',
+        domicilioFiscal: ''
     },
     sucursales: [],
     usuarios: [],
@@ -27,6 +38,9 @@ const DEFAULT_STATE = {
     movimientosBancarios: [],
     mesas: [],
     reservas: [],
+    afipFacturas: [],      // Facturas emitidas (tipo A, B, C)
+    afipVeps: [],          // VEPs pendientes y pagados
+    afipVencimientos: [],  // Fechas importantes (IVA, IIBB, Ganancias)
     integraciones: {
         openaiKey: '', anthropicKey: '',
         metaAccessToken: '', metaPixelId: '',
@@ -43,7 +57,13 @@ const DEFAULT_STATE = {
 function reducer(state, action) {
     switch (action.type) {
         case 'HYDRATE':
-            return { ...DEFAULT_STATE, ...action.payload, meta: { ...DEFAULT_STATE.meta, ...action.payload.meta } };
+            return {
+                ...DEFAULT_STATE,
+                ...action.payload,
+                business: { ...DEFAULT_STATE.business, ...(action.payload.business || {}) },
+                integraciones: { ...DEFAULT_STATE.integraciones, ...(action.payload.integraciones || {}) },
+                meta: { ...DEFAULT_STATE.meta, ...(action.payload.meta || {}) }
+            };
         case 'UPDATE_BUSINESS':
             return { ...state, business: { ...state.business, ...action.payload } };
         case 'UPDATE_META':
@@ -85,20 +105,79 @@ const DataContext = createContext(null);
 export function DataProvider({ children }) {
     const [state, dispatch] = useReducer(reducer, DEFAULT_STATE);
     const [hydrated, setHydrated] = useState(false);
+    const [saveStatus, setSaveStatus] = useState({ saving: false, lastSaved: null, lastError: null, source: null });
+    const saveTimerRef = useRef(null);
+    const snapshotTimerRef = useRef(null);
 
+    // 1) HYDRATE al iniciar — intenta IndexedDB, cae a localStorage, última chance history
     useEffect(() => {
-        try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            if (raw) dispatch({ type: 'HYDRATE', payload: JSON.parse(raw) });
-        } catch (err) { console.warn('Hydrate failed:', err); }
-        setHydrated(true);
+        (async () => {
+            try {
+                const { state: loaded, source, savedAt } = await loadState();
+                if (loaded) {
+                    dispatch({ type: 'HYDRATE', payload: loaded });
+                    setSaveStatus({ saving: false, lastSaved: savedAt, lastError: null, source });
+                    if (source === 'history-recovery') {
+                        console.warn('⚠️ Data recuperada de snapshot histórico — el storage primario falló');
+                    }
+                }
+            } catch (err) {
+                console.error('Hydrate completely failed:', err);
+                setSaveStatus({ saving: false, lastSaved: null, lastError: err.message, source: null });
+            }
+            setHydrated(true);
+            // Pedir storage persistente al navegador (no borrarlo si quedás sin espacio)
+            persistStorage().then(ok => {
+                if (ok) console.log('✓ Storage marcado como persistente');
+            });
+        })();
     }, []);
 
+    // 2) PERSIST — debounced, escribe a IndexedDB + localStorage
     useEffect(() => {
         if (!hydrated) return;
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-        catch (err) { console.warn('Persist failed:', err); }
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        setSaveStatus(s => ({ ...s, saving: true }));
+        saveTimerRef.current = setTimeout(async () => {
+            try {
+                const result = await saveState(state);
+                setSaveStatus({
+                    saving: false,
+                    lastSaved: result.savedAt,
+                    lastError: (!result.idbOk && !result.lsOk) ? 'Ambos sistemas de guardado fallaron' : null,
+                    source: result.idbOk ? 'indexeddb' : 'localstorage'
+                });
+            } catch (err) {
+                setSaveStatus(s => ({ ...s, saving: false, lastError: err.message }));
+            }
+        }, 500);
+        return () => clearTimeout(saveTimerRef.current);
     }, [state, hydrated]);
+
+    // 3) SNAPSHOT HISTORY — cada 10 min guarda punto de restauración
+    useEffect(() => {
+        if (!hydrated) return;
+        snapshotTimerRef.current = setInterval(() => {
+            pushHistorySnapshot(state).catch(err => console.warn('Snapshot error:', err));
+        }, 10 * 60 * 1000);
+        return () => clearInterval(snapshotTimerRef.current);
+    }, [hydrated, state]);
+
+    // 4) Beforeunload: escritura SINCRÓNICA a localStorage (IndexedDB no puede ser sync)
+    useEffect(() => {
+        const handler = () => {
+            try {
+                const payload = { state, savedAt: new Date().toISOString(), version: 1 };
+                localStorage.setItem('dashboard_state_v1', JSON.stringify(payload));
+            } catch { /* ignore quota errors at unload */ }
+        };
+        window.addEventListener('beforeunload', handler);
+        window.addEventListener('pagehide', handler); // iOS Safari
+        return () => {
+            window.removeEventListener('beforeunload', handler);
+            window.removeEventListener('pagehide', handler);
+        };
+    }, [state]);
 
     const actions = {
         updateBusiness: (patch) => dispatch({ type: 'UPDATE_BUSINESS', payload: patch }),
@@ -110,11 +189,29 @@ export function DataProvider({ children }) {
         add: (collection, item) => dispatch({ type: 'ADD_ITEM', payload: { collection, item } }),
         update: (collection, id, patch) => dispatch({ type: 'UPDATE_ITEM', payload: { collection, id, patch } }),
         remove: (collection, id) => dispatch({ type: 'REMOVE_ITEM', payload: { collection, id } }),
-        bulkAdd: (collection, items) => dispatch({ type: 'BULK_ADD', payload: { collection, items } })
+        bulkAdd: (collection, items) => dispatch({ type: 'BULK_ADD', payload: { collection, items } }),
+        hydrate: (newState) => dispatch({ type: 'HYDRATE', payload: newState }),
+        forceSave: async () => {
+            try {
+                setSaveStatus(s => ({ ...s, saving: true }));
+                const result = await saveState(state);
+                await pushHistorySnapshot(state);
+                setSaveStatus({
+                    saving: false,
+                    lastSaved: result.savedAt,
+                    lastError: null,
+                    source: result.idbOk ? 'indexeddb' : 'localstorage'
+                });
+                return result;
+            } catch (err) {
+                setSaveStatus(s => ({ ...s, saving: false, lastError: err.message }));
+                throw err;
+            }
+        }
     };
 
     return (
-        <DataContext.Provider value={{ state, actions, hydrated }}>
+        <DataContext.Provider value={{ state, actions, hydrated, saveStatus }}>
             {children}
         </DataContext.Provider>
     );
@@ -338,6 +435,18 @@ export const SECTION_HELP = {
     reservas: {
         what: 'Reservas de mesas o turnos.',
         how: 'Cliente, fecha, hora, personas y mesa. Estados: confirmada, pendiente, cancelada.'
+    },
+    afip: {
+        what: 'Facturación electrónica, VEPs, vencimientos fiscales y padrón AFIP.',
+        how: 'Cargá tus datos fiscales (CUIT, condición IVA, punto de venta) en Configuración. Desde acá podés generar facturas A/B/C en PDF, trackear VEPs y ver próximos vencimientos.'
+    },
+    dataimport: {
+        what: 'Subí Excels o CSVs y la IA los entiende y los importa automáticamente.',
+        how: 'Arrastrá tu archivo, elegí qué tipo de datos son (productos, clientes, ventas, etc.) y la IA detecta las columnas y los agrega. Soporta formatos de Tiendanube, Mercado Libre, WooCommerce, y Excels caseros.'
+    },
+    backup: {
+        what: 'Sistema de respaldos multi-capa para que tu data no se pierda nunca.',
+        how: 'Guardado automático cada 30 seg en IndexedDB + localStorage. Snapshots cada 10 min (últimos 10). Descarga manual a JSON. Carpeta elegible (pendrive, Dropbox sync, etc.). Google Drive cuando conectes fase A.'
     },
     settings: {
         what: 'Datos del negocio, rubro, moneda, integraciones y backup.',

@@ -3,5 +3,17 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
     plugins: [react()],
-    server: { port: 5173 }
+    build: {
+        rollupOptions: {
+            output: {
+                manualChunks: (id) => {
+                    if (id.includes('node_modules/exceljs')) return 'exceljs-vendor';
+                    if (id.includes('node_modules/lucide-react')) return 'lucide-vendor';
+                    if (id.includes('node_modules/react')) return 'react-vendor';
+                    if (id.includes('node_modules/idb-keyval')) return 'idb-vendor';
+                }
+            }
+        },
+        chunkSizeWarningLimit: 1200
+    }
 });
