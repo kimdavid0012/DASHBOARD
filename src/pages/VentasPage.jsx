@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Receipt, Eye, Trash2, Filter, ShoppingCart } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
-import { PageHeader, Card, Modal, EmptyState, Badge, KpiCard, fmtMoney, fmtDate, InfoBox } from '../components/UI';
+import { PageHeader, Card, Modal, EmptyState, Badge, KpiCard, fmtMoney, fmtDate, InfoBox, DateRangeFilter, filterByDateRange, describeDateRange } from '../components/UI';
 import { useT } from '../i18n';
 
 export default function VentasPage({ onNavigate }) {
@@ -11,19 +11,15 @@ export default function VentasPage({ onNavigate }) {
     const current = state.meta.currentSucursalId || 'all';
 
     const [viewId, setViewId] = useState(null);
-    const [filterDias, setFilterDias] = useState('30');
+    const [range, setRange] = useState({ type: 'month' });
     const [filterMetodo, setFilterMetodo] = useState('all');
 
     const ventas = useMemo(() => {
         let list = filterBySucursal(state.ventas, current);
-        if (filterDias !== 'all') {
-            const cutoff = new Date();
-            cutoff.setDate(cutoff.getDate() - Number(filterDias));
-            list = list.filter(v => new Date(v.fecha || 0) >= cutoff);
-        }
+        list = filterByDateRange(list, range, v => v.fecha);
         if (filterMetodo !== 'all') list = list.filter(v => v.metodo === filterMetodo);
         return list.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-    }, [state.ventas, current, filterDias, filterMetodo]);
+    }, [state.ventas, current, range, filterMetodo]);
 
     const viewingVenta = viewId ? state.ventas.find(v => v.id === viewId) : null;
 
@@ -58,16 +54,16 @@ export default function VentasPage({ onNavigate }) {
                 <KpiCard icon={<Receipt size={20} />} label="Ticket promedio" value={fmtMoney(stats.ticketProm, state.business.moneda)} color="#60a5fa" hint="Total / cantidad de operaciones" />
             </div>
 
+            <div style={{ marginBottom: 16 }}>
+                <DateRangeFilter value={range} onChange={setRange} />
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                    📅 {describeDateRange(range)} · {ventas.length} {labels.sales.toLowerCase()}
+                </div>
+            </div>
+
             <Card>
                 <div className="flex gap-2 mb-3" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
                     <Filter size={14} style={{ color: 'var(--text-muted)' }} />
-                    <select className="select" style={{ maxWidth: 160 }} value={filterDias} onChange={e => setFilterDias(e.target.value)}>
-                        <option value="7">Últimos 7 días</option>
-                        <option value="30">Últimos 30 días</option>
-                        <option value="90">Últimos 90 días</option>
-                        <option value="365">Último año</option>
-                        <option value="all">Todo</option>
-                    </select>
                     <select className="select" style={{ maxWidth: 180 }} value={filterMetodo} onChange={e => setFilterMetodo(e.target.value)}>
                         {metodos.map(m => <option key={m} value={m}>{m === 'all' ? 'Todos los métodos' : m}</option>)}
                     </select>

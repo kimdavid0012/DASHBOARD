@@ -5,7 +5,7 @@ import {
     Pencil, ExternalLink, Info, FileCheck, BellRing
 } from 'lucide-react';
 import { useData, SECTION_HELP } from '../store/DataContext';
-import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, InfoBox, fmtMoney, fmtDate } from '../components/UI';
+import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, InfoBox, fmtMoney, fmtDate, BarChart, LineChart, PieChart, CHART_COLORS, DateRangeFilter, filterByDateRange, describeDateRange } from '../components/UI';
 import { useT } from '../i18n';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -90,6 +90,59 @@ export default function AfipPage() {
         };
     }, [facturas, veps]);
 
+    // Rango de fecha para gráficos
+    const [range, setRange] = useState({ type: 'year' });
+
+    // Facturas filtradas por rango
+    const facturasFiltradas = useMemo(() =>
+        filterByDateRange(facturas, range, f => f.fecha),
+    [facturas, range]);
+
+    // Serie mensual de facturación (últimos 12 meses)
+    const serieMensual = useMemo(() => {
+        const meses = {};
+        facturasFiltradas.forEach(f => {
+            const key = (f.fecha || '').slice(0, 7);
+            if (!key) return;
+            if (!meses[key]) meses[key] = { neto: 0, iva: 0, total: 0, cantidad: 0 };
+            meses[key].neto += Number(f.neto || f.total - (f.iva || 0) || 0);
+            meses[key].iva += Number(f.iva || 0);
+            meses[key].total += Number(f.total || 0);
+            meses[key].cantidad += 1;
+        });
+        const sorted = Object.entries(meses).sort(([a], [b]) => a.localeCompare(b)).slice(-12);
+        return sorted.map(([mes, datos]) => ({
+            label: new Date(mes + '-01').toLocaleDateString('es-AR', { month: 'short' }).replace('.', ''),
+            ...datos
+        }));
+    }, [facturasFiltradas]);
+
+    // Distribución por tipo de comprobante
+    const distTipo = useMemo(() => {
+        const tipos = {};
+        facturasFiltradas.forEach(f => {
+            const t = f.tipo || 'Otra';
+            if (!tipos[t]) tipos[t] = 0;
+            tipos[t] += Number(f.total || 0);
+        });
+        return Object.entries(tipos).map(([label, value], i) => ({
+            label,
+            value,
+            display: fmtMoney(value),
+            color: CHART_COLORS[i % CHART_COLORS.length]
+        }));
+    }, [facturasFiltradas]);
+
+    // VEPs pagados vs pendientes
+    const vepsStats = useMemo(() => {
+        const pagados = veps.filter(v => v.estado === 'pagado').reduce((s, v) => s + Number(v.monto || 0), 0);
+        const pendientes = veps.filter(v => v.estado === 'pendiente').reduce((s, v) => s + Number(v.monto || 0), 0);
+        return [
+            { label: 'Pagados ✓', value: pagados, display: fmtMoney(pagados), color: '#22c55e' },
+            { label: 'Pendientes ⏱', value: pendientes, display: fmtMoney(pendientes), color: '#f59e0b' }
+        ].filter(x => x.value > 0);
+    }, [veps]);
+
     if (!hasAfipData) {
         return (
             <div>
@@ -140,12 +193,87 @@ export default function AfipPage() {
 
             {tab === 'dashboard' && (
                 <div>
+                    <div style={{ marginBottom: 16 }}>
+                        <DateRangeFilter value={range} onChange={setRange} />
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                            📅 {describeDateRange(range)} · {facturasFiltradas.length} factura{facturasFiltradas.length !== 1 ? 's' : ''} en el período
+                        </div>
+                    </div>
+
                     <div className="kpi-grid mb-4">
                         <KpiCard icon={<FileCheck size={20} />} label="Facturas este mes" value={kpis.facturasMes} color="#63f1cb" />
                         <KpiCard icon={<DollarSign size={20} />} label="Facturado mes" value={fmtMoney(kpis.totalFacturadoMes)} color="#60a5fa" />
                         <KpiCard icon={<TrendingUp size={20} />} label="IVA débito mes" value={fmtMoney(kpis.ivaDebitoMes)} color="#fbbf24" hint="21% del neto gravado" />
                         <KpiCard icon={<BellRing size={20} />} label="VEPs pendientes" value={kpis.vepsPendientes} color="#fb7185" hint={fmtMoney(kpis.totalVepsPendientes)} />
                     </div>
+
+                    {/* GRÁFICOS */}
+                    {facturasFiltradas.length > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, marginBottom: 16 }}>
+                            <Card title="📈 Facturación mensual" subtitle={`${describeDateRange(range)} — Neto + IVA`}>
+                                {serieMensual.length > 0 ? (
+                                    <div>
+                                        <LineChart
+                                            series={[
+                                                { data: serieMensual.map(m => m.neto), color: '#63f1cb' },
+                                                { data: serieMensual.map(m => m.iva), color: '#fbbf24' }
+                                            ]}
+                                            labels={serieMensual.map(m => m.label)}
+                                            height={180}
+                                        />
+                                        <div style={{ display: 'flex', gap: 16, marginTop: 12, fontSize: 11, justifyContent: 'center' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <div style={{ width: 12, height: 3, background: '#63f1cb', borderRadius: 2 }} />
+                                                Neto gravado
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <div style={{ width: 12, height: 3, background: '#fbbf24', borderRadius: 2 }} />
+                                                IVA
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <EmptyState title="Sin datos suficientes" />
+                                )}
+                            </Card>
+
+                            <Card title="🎯 Por tipo de comprobante" subtitle="Distribución del período">
+                                {distTipo.length > 0 ? (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 16, alignItems: 'center' }}>
+                                        <BarChart data={distTipo} />
+                                        <div style={{ textAlign: 'center' }}>
+                                            <PieChart data={distTipo} size={160} />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <EmptyState title="Sin facturas" />
+                                )}
+                            </Card>
+
+                            {vepsStats.length > 0 && (
+                                <Card title="💸 VEPs — Pagados vs Pendientes">
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 16, alignItems: 'center' }}>
+                                        <BarChart data={vepsStats} />
+                                        <div style={{ textAlign: 'center' }}>
+                                            <PieChart data={vepsStats} size={160} />
+                                        </div>
+                                    </div>
+                                </Card>
+                            )}
+
+                            <Card title="💰 Cantidad de facturas por mes" subtitle="Evolución de emisión">
+                                {serieMensual.length > 0 ? (
+                                    <BarChart data={serieMensual.map((m, i) => ({
+                                        label: m.label,
+                                        value: m.cantidad,
+                                        color: CHART_COLORS[i % CHART_COLORS.length]
+                                    }))} />
+                                ) : (
+                                    <EmptyState title="Sin datos" />
+                                )}
+                            </Card>
+                        </div>
+                    )}
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
                         <Card title="Próximos vencimientos" subtitle="Según tu condición frente al IVA">
