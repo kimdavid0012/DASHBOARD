@@ -273,3 +273,176 @@ export const fmtDate = (iso) => {
 };
 
 export const CHART_COLORS = ['#63f1cb', '#60a5fa', '#fbbf24', '#fb7185', '#c084fc', '#4ade80', '#f472b6', '#94a3b8', '#f4c15a', '#a3e635'];
+
+// ═══════════════════════════════════════════════════════════════════
+// DateRangeFilter — filtro universal de fecha para TODAS las páginas
+// Uso: const [range, setRange] = useState({ type: 'month' });
+//      <DateRangeFilter value={range} onChange={setRange} />
+//      Luego para filtrar: filterByDateRange(items, range, item => item.fecha)
+// ═══════════════════════════════════════════════════════════════════
+export function DateRangeFilter({ value = { type: 'month' }, onChange, compact = false }) {
+    const presets = [
+        { id: 'today', label: 'Hoy' },
+        { id: 'yesterday', label: 'Ayer' },
+        { id: 'week', label: '7 días' },
+        { id: 'month', label: '30 días' },
+        { id: 'quarter', label: '90 días' },
+        { id: 'year', label: 'Año' },
+        { id: 'all', label: 'Todo' },
+        { id: 'custom', label: 'Personalizado' }
+    ];
+
+    const handlePreset = (id) => {
+        if (id === 'custom') {
+            // Abrir inputs de fecha custom con valores por defecto (mes actual)
+            const end = new Date();
+            const start = new Date();
+            start.setMonth(start.getMonth() - 1);
+            onChange({
+                type: 'custom',
+                from: start.toISOString().slice(0, 10),
+                to: end.toISOString().slice(0, 10)
+            });
+        } else {
+            onChange({ type: id });
+        }
+    };
+
+    const isCustom = value.type === 'custom';
+
+    return (
+        <div style={{
+            display: 'flex',
+            gap: 6,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            padding: compact ? 0 : 4,
+            background: compact ? 'transparent' : 'var(--bg-elevated)',
+            borderRadius: 10,
+            border: compact ? 'none' : '1px solid var(--border-color)'
+        }}>
+            <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                {presets.map(p => (
+                    <button
+                        key={p.id}
+                        onClick={() => handlePreset(p.id)}
+                        style={{
+                            padding: '6px 10px',
+                            background: value.type === p.id ? 'var(--accent-soft)' : 'transparent',
+                            color: value.type === p.id ? 'var(--accent)' : 'var(--text-muted)',
+                            border: 'none',
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            fontSize: 12,
+                            fontWeight: value.type === p.id ? 600 : 400,
+                            whiteSpace: 'nowrap'
+                        }}
+                    >
+                        {p.label}
+                    </button>
+                ))}
+            </div>
+            {isCustom && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 6 }}>
+                    <input
+                        type="date"
+                        className="input"
+                        style={{ padding: '6px 8px', fontSize: 12, minHeight: 'auto', maxWidth: 140 }}
+                        value={value.from || ''}
+                        onChange={e => onChange({ ...value, from: e.target.value })}
+                    />
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>→</span>
+                    <input
+                        type="date"
+                        className="input"
+                        style={{ padding: '6px 8px', fontSize: 12, minHeight: 'auto', maxWidth: 140 }}
+                        value={value.to || ''}
+                        onChange={e => onChange({ ...value, to: e.target.value })}
+                    />
+                </div>
+            )}
+        </div>
+    );
+}
+
+/**
+ * Filtra un array según el rango elegido en DateRangeFilter
+ * @param {Array} items - array a filtrar
+ * @param {object} range - { type, from?, to? }
+ * @param {Function} getDate - función que extrae la fecha de cada item
+ */
+export function filterByDateRange(items, range, getDate = (i) => i.fecha) {
+    if (!items || items.length === 0) return [];
+    if (range.type === 'all') return items;
+
+    const now = new Date();
+    let startDate, endDate;
+
+    if (range.type === 'custom') {
+        if (!range.from && !range.to) return items;
+        startDate = range.from ? new Date(range.from + 'T00:00:00') : new Date(0);
+        endDate = range.to ? new Date(range.to + 'T23:59:59') : new Date();
+    } else {
+        endDate = new Date();
+        endDate.setHours(23, 59, 59, 999);
+
+        switch (range.type) {
+            case 'today':
+                startDate = new Date();
+                startDate.setHours(0, 0, 0, 0);
+                break;
+            case 'yesterday':
+                startDate = new Date();
+                startDate.setDate(startDate.getDate() - 1);
+                startDate.setHours(0, 0, 0, 0);
+                endDate = new Date();
+                endDate.setDate(endDate.getDate() - 1);
+                endDate.setHours(23, 59, 59, 999);
+                break;
+            case 'week':
+                startDate = new Date();
+                startDate.setDate(startDate.getDate() - 7);
+                break;
+            case 'month':
+                startDate = new Date();
+                startDate.setDate(startDate.getDate() - 30);
+                break;
+            case 'quarter':
+                startDate = new Date();
+                startDate.setDate(startDate.getDate() - 90);
+                break;
+            case 'year':
+                startDate = new Date();
+                startDate.setDate(startDate.getDate() - 365);
+                break;
+            default:
+                return items;
+        }
+    }
+
+    const startMs = startDate.getTime();
+    const endMs = endDate.getTime();
+    return items.filter(item => {
+        const d = getDate(item);
+        if (!d) return false;
+        const itemMs = new Date(d).getTime();
+        return itemMs >= startMs && itemMs <= endMs;
+    });
+}
+
+/**
+ * Devuelve una descripción humana del rango (para subtítulos)
+ */
+export function describeDateRange(range) {
+    const map = {
+        today: 'Hoy',
+        yesterday: 'Ayer',
+        week: 'Últimos 7 días',
+        month: 'Últimos 30 días',
+        quarter: 'Últimos 90 días',
+        year: 'Último año',
+        all: 'Desde siempre',
+        custom: range.from && range.to ? `${range.from} → ${range.to}` : 'Personalizado'
+    };
+    return map[range.type] || '';
+}

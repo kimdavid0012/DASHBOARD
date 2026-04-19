@@ -269,6 +269,7 @@ export function ReservasPage() {
 
     const [open, setOpen] = useState(false);
     const [editId, setEditId] = useState(null);
+    const [shareOpen, setShareOpen] = useState(false);
     const EMPTY = {
         clienteNombre: '', clienteTel: '',
         fecha: new Date().toISOString().slice(0, 10),
@@ -299,9 +300,14 @@ export function ReservasPage() {
                 subtitle={state.business.rubro === 'restaurante' ? 'Reservas de mesas' : 'Turnos y reservas'}
                 help={SECTION_HELP.reservas}
                 actions={
-                    <button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}>
-                        <Plus size={14} /> Nueva reserva
-                    </button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-ghost" onClick={() => setShareOpen(true)}>
+                            🔗 Link público
+                        </button>
+                        <button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}>
+                            <Plus size={14} /> Nueva reserva
+                        </button>
+                    </div>
                 }
             />
 
@@ -403,7 +409,77 @@ export function ReservasPage() {
                     <button className="btn btn-primary" onClick={save}>{editId ? 'Guardar' : 'Crear'}</button>
                 </div>
             </Modal>
+
+            <ShareReservationModal open={shareOpen} onClose={() => setShareOpen(false)} state={state} current={current} />
         </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SHARE RESERVATION MODAL
+// ═══════════════════════════════════════════════════════════════════
+function ShareReservationModal({ open, onClose, state, current }) {
+    const [copied, setCopied] = useState(false);
+    const sucursalId = current !== 'all' ? current : (state.sucursales[0]?.id || '');
+    const businessSlug = (state.business.name || 'reserva')
+        .toLowerCase().trim()
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+    const publicUrl = `${baseUrl}/reservar.html?b=${encodeURIComponent(state.business.name || '')}&s=${sucursalId}&slug=${businessSlug}`;
+
+    const copyLink = async () => {
+        try {
+            await navigator.clipboard.writeText(publicUrl);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch { prompt('Copiá:', publicUrl); }
+    };
+    const shareWhatsApp = () => {
+        const msg = `¡Reservá en ${state.business.name || 'nuestro restaurante'}!\n\n${publicUrl}`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    };
+    const shareNative = async () => {
+        if (navigator.share) {
+            try { await navigator.share({ title: `Reservá en ${state.business.name || 'nuestro local'}`, url: publicUrl }); }
+            catch { }
+        } else copyLink();
+    };
+
+    return (
+        <Modal open={open} onClose={onClose} title="🔗 Compartir link de reservas" size="md">
+            <InfoBox>
+                <strong>Link público de reservas</strong>
+                <div style={{ fontSize: 13, marginTop: 4 }}>
+                    Compartí con tus clientes por WhatsApp, Instagram o web. Pueden reservar eligiendo fecha, hora y personas.
+                    La reserva llega directo a tu Dashboard.
+                </div>
+            </InfoBox>
+            <div style={{ marginTop: 16 }}>
+                <div className="field-label">Tu link</div>
+                <div style={{ display: 'flex', gap: 8, padding: 10, background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', borderRadius: 10, alignItems: 'center' }}>
+                    <input className="input" readOnly value={publicUrl} style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 12 }} onClick={e => e.target.select()} />
+                    <button className="btn btn-primary btn-sm" onClick={copyLink}>
+                        {copied ? '✓ Copiado' : '📋 Copiar'}
+                    </button>
+                </div>
+            </div>
+            <div style={{ marginTop: 16, textAlign: 'center' }}>
+                <div className="field-label">Código QR</div>
+                <div style={{ display: 'inline-block', padding: 16, background: 'white', borderRadius: 12, marginTop: 8 }}>
+                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(publicUrl)}`} alt="QR" width="200" height="200" />
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>Imprimilo y pegalo en tu local</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button className="btn btn-ghost" onClick={shareWhatsApp}>📱 WhatsApp</button>
+                {typeof navigator !== 'undefined' && navigator.share && (
+                    <button className="btn btn-ghost" onClick={shareNative}>🔗 Compartir...</button>
+                )}
+                <button className="btn btn-primary" onClick={() => window.open(publicUrl, '_blank')}>
+                    👁️ Ver preview
+                </button>
+            </div>
+        </Modal>
     );
 }
 

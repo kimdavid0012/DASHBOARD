@@ -3,6 +3,7 @@ import { MessageCircle, X as XIcon, Send, Sparkles, Brain, Mic, MicOff, Volume2,
 import { useData, getRubroLabels } from '../store/DataContext';
 import { useT, getLang, langInstructions } from '../i18n';
 import { createRecognizer, sttIsSupported, ttsIsSupported, speak, stopSpeaking, isSpeaking } from '../utils/voice';
+import { BOT_TOOLS, executeTool } from './bot-tools';
 
 // ═══════════════════════════════════════════════════════════════════
 // RUBRO-SPECIFIC SYSTEM PROMPTS
@@ -80,21 +81,25 @@ Top 5 más vendidos: ${topProductos.join(', ') || 'aún no hay ventas'}
 3. Cuando el usuario pregunte algo, usá los números de arriba. Si te piden data que no está, decilo.
 4. Podés RECOMENDAR acciones concretas.
 5. Podés ANALIZAR: ventas, rentabilidad, stock, empleados, proveedores.
-6. NO PODÉS operar el POS ni registrar ventas por el usuario. Sí podés ayudar a cargar productos, gastos, empleados, clientes, proveedores, etc. guiando paso a paso.
-7. Pensá primero como un dueño experimentado del rubro. Después como un consultor.
-8. Si detectás algo raro en la data (ej: caída de ventas, gasto anómalo, margen negativo), señalalo proactivamente.
-9. Respuestas cortas y útiles. Bullet points cuando corresponda.
+6. ✨ **TENÉS HERRAMIENTAS PARA EJECUTAR ACCIONES REALES EN EL DASHBOARD** — cuando el usuario te pida cargar un producto, cliente, gasto, empleado, etc., USÁ LA TOOL CORRESPONDIENTE directamente en vez de explicar cómo hacerlo a mano. Tools disponibles: crear_producto, actualizar_stock, buscar_producto, crear_cliente, registrar_gasto, crear_empleado, crear_sucursal, crear_tarea, consultar_ventas, consultar_stock_bajo, consultar_pedidos_pendientes.
+7. Si faltan datos para llamar una tool (ej: precio de un producto), preguntá UNA sola cosa y después ejecutá. No abuses de preguntas.
+8. Pensá primero como un dueño experimentado del rubro. Después como un consultor.
+9. Si detectás algo raro en la data (ej: caída de ventas, gasto anómalo, margen negativo), señalalo proactivamente.
+10. Respuestas cortas y útiles. Bullet points cuando corresponda.
 
 ─── EJEMPLOS DE BUENAS RESPUESTAS ───
 
 Usuario: "¿cómo voy?"
 Vos: "Hoy llevás $${totalHoy.toLocaleString('es-AR')} en ${ventasHoy.length} operaciones. El mes va bien/mal/regular por... ${stockBajo.length > 0 ? `⚠️ Ojo con ${stockBajo.length} productos con stock bajo.` : ''}"
 
-Usuario: "qué vendo mejor?"
-Vos: "Tu top 5: ${topProductos.slice(0, 3).join(', ')}. Si querés el detalle completo andá a Informes → Por empleado."
+Usuario: "cargá aros argolla a 5000 pesos con stock 10"
+Vos: [llamás la tool crear_producto con nombre="Aros argolla", precioVenta=5000, stock=10] → "Listo, agregué Aros argolla a $5000 con stock 10. ¿Algo más?"
 
-Usuario: "cargá un producto nuevo"
-Vos: "Dale, pasame: nombre, precio de costo, precio de venta y stock inicial. Después lo agregás vos en ${labels.items} (no puedo tocar el catálogo por seguridad, pero te armo los datos listos para pegar).
+Usuario: "cuánto vendí ayer"
+Vos: [llamás consultar_ventas con periodo="ayer"] → [usás el resultado para responder naturalmente]
+
+Usuario: "registrá un gasto de alquiler 180000"
+Vos: [llamás registrar_gasto con concepto="Alquiler", monto=180000, categoria="Alquiler"] → "Registré el gasto de alquiler por $180.000."
 
 Sé breve y útil. Nunca inventes números que no tengas. Si faltan datos, decile "esa info no la veo todavía, cargá X para que te lo pueda decir".`;
 }
@@ -103,7 +108,7 @@ Sé breve y útil. Nunca inventes números que no tengas. Si faltan datos, decil
 // CELA BOT COMPONENT (floating chat)
 // ═══════════════════════════════════════════════════════════════════
 export default function CelaBot() {
-    const { state } = useData();
+    const { state, actions } = useData();
     const [open, setOpen] = useState(false);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
@@ -244,7 +249,6 @@ export default function CelaBot() {
 
         try {
             if (!hasKey) {
-                // Local fallback: simulated answers with basic data
                 const reply = generateLocalReply(text, state);
                 setMessages([...newMessages, { role: 'assistant', content: reply }]);
                 setLoading(false);
@@ -253,29 +257,92 @@ export default function CelaBot() {
             }
 
             const systemPrompt = buildSystemPrompt(state);
-            let reply = '';
 
+            // ═══════════ Claude con tool use (loop hasta stop_reason='end_turn') ═══════════
             if (state.integraciones.anthropicKey) {
-                // Call Anthropic
-                const res = await fetch('https://api.anthropic.com/v1/messages', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-api-key': state.integraciones.anthropicKey,
-                        'anthropic-version': '2023-06-01',
-                        'anthropic-dangerous-direct-browser-access': 'true'
-                    },
-                    body: JSON.stringify({
-                        model: 'claude-sonnet-4-5',
-                        max_tokens: 800,
-                        system: systemPrompt,
-                        messages: newMessages.map(m => ({ role: m.role, content: m.content }))
-                    })
-                });
-                const data = await res.json();
-                if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-                reply = data.content?.[0]?.text || 'No recibí respuesta del modelo.';
+                // Build message history — convertimos strings viejos a formato nuevo
+                let conversationMessages = newMessages.map(m => ({
+                    role: m.role,
+                    content: typeof m.content === 'string' ? m.content : m.content
+                }));
+
+                let iteration = 0;
+                const maxIterations = 5; // Max tool loops por mensaje
+                let finalText = '';
+                const executedTools = [];
+
+                while (iteration < maxIterations) {
+                    iteration++;
+
+                    const res = await fetch('https://api.anthropic.com/v1/messages', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-api-key': state.integraciones.anthropicKey,
+                            'anthropic-version': '2023-06-01',
+                            'anthropic-dangerous-direct-browser-access': 'true'
+                        },
+                        body: JSON.stringify({
+                            model: 'claude-sonnet-4-5',
+                            max_tokens: 1024,
+                            system: systemPrompt,
+                            tools: BOT_TOOLS,
+                            messages: conversationMessages
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+
+                    // Extraer texto + tool_use blocks
+                    const textBlocks = (data.content || []).filter(b => b.type === 'text');
+                    const toolUseBlocks = (data.content || []).filter(b => b.type === 'tool_use');
+
+                    // Acumular texto parcial
+                    const partialText = textBlocks.map(b => b.text).join('\n').trim();
+                    if (partialText) finalText = (finalText ? finalText + '\n' : '') + partialText;
+
+                    // Si no hay tools para ejecutar o stop_reason=end_turn, salimos
+                    if (data.stop_reason === 'end_turn' || toolUseBlocks.length === 0) {
+                        break;
+                    }
+
+                    // Si hay tools → ejecutarlas y agregar results
+                    // Agregamos el mensaje del assistant (con tools) al historial
+                    conversationMessages.push({
+                        role: 'assistant',
+                        content: data.content
+                    });
+
+                    // Ejecutamos cada tool y armamos tool_result
+                    const toolResults = [];
+                    for (const tu of toolUseBlocks) {
+                        const result = await executeTool(tu.name, tu.input, state, actions);
+                        executedTools.push({ name: tu.name, input: tu.input, result });
+                        toolResults.push({
+                            type: 'tool_result',
+                            tool_use_id: tu.id,
+                            content: result
+                        });
+                    }
+
+                    // Agregamos el user con los tool_results
+                    conversationMessages.push({
+                        role: 'user',
+                        content: toolResults
+                    });
+                }
+
+                // Si no hubo texto pero sí tools ejecutadas, armamos un mensaje resumen
+                if (!finalText && executedTools.length > 0) {
+                    finalText = executedTools.map(t => t.result).join('\n\n');
+                }
+                if (!finalText) finalText = 'No recibí respuesta del modelo.';
+
+                setMessages([...newMessages, { role: 'assistant', content: finalText }]);
+                if (autoSpeak && ttsOk) speakText(finalText);
+
             } else if (state.integraciones.openaiKey) {
+                // OpenAI — sin tool use por ahora (simple text)
                 const res = await fetch('https://api.openai.com/v1/chat/completions', {
                     method: 'POST',
                     headers: {
@@ -293,11 +360,10 @@ export default function CelaBot() {
                 });
                 const data = await res.json();
                 if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-                reply = data.choices?.[0]?.message?.content || 'No recibí respuesta del modelo.';
+                const reply = data.choices?.[0]?.message?.content || 'No recibí respuesta del modelo.';
+                setMessages([...newMessages, { role: 'assistant', content: reply }]);
+                if (autoSpeak && ttsOk) speakText(reply);
             }
-
-            setMessages([...newMessages, { role: 'assistant', content: reply }]);
-            if (autoSpeak && ttsOk && reply) speakText(reply);
         } catch (err) {
             const errMsg = t('bot.error_connect', { error: err.message });
             setMessages([...newMessages, { role: 'assistant', content: errMsg }]);

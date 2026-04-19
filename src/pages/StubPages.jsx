@@ -3,10 +3,11 @@ import {
     Megaphone, Bot, Instagram, Music2, BarChart3, Globe,
     Landmark, CheckSquare, Plus, Trash2, ArrowRight, Settings2, Pencil,
     Play, Calendar, Clock, Zap, TrendingUp, Eye, Target,
-    Lightbulb, PenTool, Users2, Package, DollarSign, AlertCircle
+    Lightbulb, PenTool, Users2, Package, DollarSign, AlertCircle,
+    ShoppingCart, AlertTriangle
 } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
-import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, InfoBox, fmtMoney, fmtDate } from '../components/UI';
+import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, InfoBox, fmtMoney, fmtDate, BarChart, PieChart, LineChart, CHART_COLORS, DateRangeFilter, filterByDateRange, describeDateRange } from '../components/UI';
 import { useT, langInstructions } from '../i18n';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -458,10 +459,12 @@ export function WebPage({ onNavigate }) {
     const t = useT();
     const { state } = useData();
     const hasWoo = !!state.integraciones.wooStoreUrl;
-    return (
-        <div>
-            <PageHeader icon={Globe} title="Tienda online" subtitle="WooCommerce / Shopify" help={SECTION_HELP.web} />
-            {!hasWoo ? (
+    const hasCreds = !!(state.integraciones.wooConsumerKey && state.integraciones.wooConsumerSecret);
+
+    if (!hasWoo) {
+        return (
+            <div>
+                <PageHeader icon={Globe} title="Tienda online" subtitle="WooCommerce / Shopify" help={SECTION_HELP.web} />
                 <ComingSoonCard
                     icon={Globe}
                     title="Conectá tu tienda online"
@@ -469,8 +472,292 @@ export function WebPage({ onNavigate }) {
                     steps={['WooCommerce → REST API → Crear clave', 'Copiá Consumer Key + Secret + URL', 'Pegalos en Configuración']}
                     onNavigate={() => onNavigate?.('settings')}
                 />
-            ) : (
-                <Card><EmptyState icon={Globe} title="Tienda conectada ✓" description={`URL: ${state.integraciones.wooStoreUrl}`} /></Card>
+            </div>
+        );
+    }
+
+    return <WooCommerceDashboard state={state} onNavigate={onNavigate} hasCreds={hasCreds} />;
+}
+
+function WooCommerceDashboard({ state, onNavigate, hasCreds }) {
+    const [loading, setLoading] = React.useState(false);
+    const [error, setError] = React.useState('');
+    const [data, setData] = React.useState(() => {
+        try {
+            const cached = localStorage.getItem('woo_cache_v1');
+            return cached ? JSON.parse(cached) : null;
+        } catch { return null; }
+    });
+    const [range, setRange] = React.useState({ type: 'month' });
+
+    const storeUrl = state.integraciones.wooStoreUrl?.replace(/\/$/, '');
+    const ck = state.integraciones.wooConsumerKey;
+    const cs = state.integraciones.wooConsumerSecret;
+
+    const fetchWoo = async () => {
+        if (!hasCreds) {
+            setError('Faltan Consumer Key / Secret. Andá a Configuración → Integraciones.');
+            return;
+        }
+        setLoading(true); setError('');
+        try {
+            const auth = btoa(`${ck}:${cs}`);
+            const headers = { 'Authorization': `Basic ${auth}`, 'Accept': 'application/json' };
+
+            // Fetch en paralelo
+            const [ordersRes, productsRes, reportsRes] = await Promise.all([
+                fetch(`${storeUrl}/wp-json/wc/v3/orders?per_page=50&orderby=date&order=desc`, { headers }),
+                fetch(`${storeUrl}/wp-json/wc/v3/products?per_page=100&orderby=popularity`, { headers }),
+                fetch(`${storeUrl}/wp-json/wc/v3/reports/sales?period=month`, { headers }).catch(() => null)
+            ]);
+
+            if (!ordersRes.ok) throw new Error(`Error ${ordersRes.status}: ${ordersRes.statusText}. Verificá tus credenciales.`);
+
+            const orders = await ordersRes.json();
+            const products = productsRes.ok ? await productsRes.json() : [];
+            const reports = (reportsRes && reportsRes.ok) ? await reportsRes.json() : null;
+
+            const payload = {
+                orders, products, reports,
+                fetchedAt: new Date().toISOString()
+            };
+            setData(payload);
+            localStorage.setItem('woo_cache_v1', JSON.stringify(payload));
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    React.useEffect(() => { if (hasCreds && !data) fetchWoo(); }, [hasCreds]);
+
+    const orders = data?.orders || [];
+    const products = data?.products || [];
+
+    // Filter orders by date range
+    const filteredOrders = React.useMemo(() => {
+        return filterByDateRange(orders, range, o => o.date_created);
+    }, [orders, range]);
+
+    const totalVentas = filteredOrders.reduce((s, o) => s + parseFloat(o.total || 0), 0);
+    const totalPedidos = filteredOrders.length;
+    const ticketPromedio = totalPedidos > 0 ? totalVentas / totalPedidos : 0;
+    const pendientes = orders.filter(o => ['pending', 'processing', 'on-hold'].includes(o.status)).length;
+
+    // Estados de pedidos
+    const statusMap = {};
+    filteredOrders.forEach(o => { statusMap[o.status] = (statusMap[o.status] || 0) + 1; });
+    const statusChart = Object.entries(statusMap).map(([label, value], i) => ({
+        label, value, color: CHART_COLORS[i % CHART_COLORS.length]
+    }));
+
+    // Top productos
+    const productCount = {};
+    filteredOrders.forEach(o => {
+        (o.line_items || []).forEach(it => {
+            const key = it.name;
+            if (!productCount[key]) productCount[key] = { label: key, value: 0, cantidad: 0 };
+            productCount[key].value += parseFloat(it.total || 0);
+            productCount[key].cantidad += Number(it.quantity || 0);
+        });
+    });
+    const topProducts = Object.values(productCount)
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 10)
+        .map((p, i) => ({
+            ...p,
+            display: fmtMoney(p.value, 'ARS'),
+            color: CHART_COLORS[i % CHART_COLORS.length]
+        }));
+
+    // Stock crítico
+    const stockCritico = products
+        .filter(p => p.manage_stock && Number(p.stock_quantity || 0) <= 5)
+        .sort((a, b) => Number(a.stock_quantity || 0) - Number(b.stock_quantity || 0))
+        .slice(0, 10);
+
+    return (
+        <div>
+            <PageHeader
+                icon={Globe}
+                title="Tienda online"
+                subtitle={storeUrl?.replace(/^https?:\/\//, '')}
+                help={SECTION_HELP.web}
+                actions={
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        {data?.fetchedAt && (
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                Actualizado: {new Date(data.fetchedAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                        )}
+                        <button className="btn btn-primary" onClick={fetchWoo} disabled={loading}>
+                            🔄 {loading ? 'Sincronizando...' : 'Sincronizar'}
+                        </button>
+                        <button className="btn btn-ghost" onClick={() => window.open(storeUrl, '_blank')}>
+                            ↗ Ver tienda
+                        </button>
+                    </div>
+                }
+            />
+
+            {error && (
+                <InfoBox variant="warning">
+                    <strong>Error al conectar:</strong> {error}
+                </InfoBox>
+            )}
+
+            {!data && !error && loading && (
+                <Card>
+                    <div style={{ textAlign: 'center', padding: 40 }}>
+                        <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+                        <div>Sincronizando con WooCommerce...</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                            Trayendo pedidos, productos y reportes
+                        </div>
+                    </div>
+                </Card>
+            )}
+
+            {data && (
+                <>
+                    <div style={{ marginBottom: 16 }}>
+                        <DateRangeFilter value={range} onChange={setRange} />
+                    </div>
+
+                    <div className="kpi-grid mb-4">
+                        <KpiCard
+                            icon={<DollarSign size={20} />}
+                            label="Ventas online"
+                            value={fmtMoney(totalVentas, 'ARS')}
+                            color="#63f1cb"
+                            hint={describeDateRange(range)}
+                        />
+                        <KpiCard
+                            icon={<ShoppingCart size={20} />}
+                            label="Pedidos"
+                            value={totalPedidos}
+                            color="#60a5fa"
+                        />
+                        <KpiCard
+                            icon={<TrendingUp size={20} />}
+                            label="Ticket promedio"
+                            value={fmtMoney(ticketPromedio, 'ARS')}
+                            color="#a78bfa"
+                        />
+                        <KpiCard
+                            icon={<Package size={20} />}
+                            label="Pendientes"
+                            value={pendientes}
+                            color="#f59e0b"
+                            hint="Total (sin filtro)"
+                        />
+                        <KpiCard
+                            icon={<Package size={20} />}
+                            label="Productos"
+                            value={products.length}
+                            color="#ec4899"
+                        />
+                        <KpiCard
+                            icon={<AlertTriangle size={20} />}
+                            label="Stock crítico"
+                            value={stockCritico.length}
+                            color="#ef4444"
+                        />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
+                        <Card title="Estado de pedidos" subtitle={describeDateRange(range)}>
+                            {statusChart.length === 0 ? (
+                                <EmptyState title="Sin pedidos en el período" />
+                            ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 16, alignItems: 'center' }}>
+                                    <BarChart data={statusChart} />
+                                    <div style={{ textAlign: 'center' }}>
+                                        <PieChart data={statusChart} size={160} />
+                                    </div>
+                                </div>
+                            )}
+                        </Card>
+
+                        <Card title="Top 10 productos vendidos" subtitle="Por facturación">
+                            {topProducts.length === 0 ? (
+                                <EmptyState title="Sin ventas en el período" />
+                            ) : (
+                                <BarChart data={topProducts} />
+                            )}
+                        </Card>
+
+                        {stockCritico.length > 0 && (
+                            <Card title="⚠️ Stock crítico" subtitle="Productos con 5 o menos unidades">
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {stockCritico.map(p => (
+                                        <div key={p.id} style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            padding: '8px 10px',
+                                            background: Number(p.stock_quantity) === 0 ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)',
+                                            border: `1px solid ${Number(p.stock_quantity) === 0 ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                                            borderRadius: 8, fontSize: 13
+                                        }}>
+                                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {p.name}
+                                            </span>
+                                            <span style={{
+                                                fontSize: 11, fontWeight: 700,
+                                                color: Number(p.stock_quantity) === 0 ? '#ef4444' : '#f59e0b',
+                                                marginLeft: 8
+                                            }}>
+                                                {Number(p.stock_quantity) === 0 ? '⚠️ SIN STOCK' : `${p.stock_quantity} ud`}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </Card>
+                        )}
+
+                        <Card title="Últimos pedidos">
+                            {orders.length === 0 ? (
+                                <EmptyState title="Sin pedidos" />
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {orders.slice(0, 10).map(o => (
+                                        <div key={o.id} style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            padding: '10px 12px', background: 'var(--bg-elevated)',
+                                            borderRadius: 8, fontSize: 13
+                                        }}>
+                                            <div>
+                                                <div style={{ fontWeight: 600 }}>
+                                                    #{o.number} · {o.billing?.first_name || 'Cliente'}
+                                                </div>
+                                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                                    {new Date(o.date_created).toLocaleDateString('es-AR')} ·
+                                                    <Badge variant={o.status === 'completed' ? 'success' : o.status === 'processing' ? 'info' : 'warning'}>
+                                                        {o.status}
+                                                    </Badge>
+                                                </div>
+                                            </div>
+                                            <div style={{ fontWeight: 600, color: 'var(--accent)' }}>
+                                                {fmtMoney(parseFloat(o.total), o.currency || 'ARS')}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </Card>
+                    </div>
+                </>
+            )}
+
+            {!hasCreds && (
+                <InfoBox variant="warning" style={{ marginTop: 16 }}>
+                    <strong>Faltan credenciales WooCommerce</strong>
+                    <div style={{ fontSize: 13, marginTop: 4 }}>
+                        Para traer data real necesitás el Consumer Key + Secret.
+                        Generalos en tu WooCommerce: <code>Ajustes → Avanzado → API REST → Añadir clave</code>.
+                        Después pegalos en Configuración → Integraciones.
+                    </div>
+                </InfoBox>
             )}
         </div>
     );

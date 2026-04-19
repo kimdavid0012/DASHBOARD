@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0a0f" />
+    <meta name="description" content="Reservá tu mesa online" />
+    <title>Reservá tu mesa</title>
+    <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(180deg, #0a0a0f 0%, #12121a 100%);
+            color: #e5e7eb;
+            min-height: 100dvh;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            max-width: 480px;
+            width: 100%;
+            background: rgba(20, 22, 30, 0.9);
+            border: 1px solid rgba(99, 241, 203, 0.15);
+            border-radius: 20px;
+            padding: 28px 24px;
+            backdrop-filter: blur(12px);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        .logo {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #63f1cb, #1fb88f);
+            border-radius: 14px;
+            font-size: 24px;
+            margin-bottom: 12px;
+        }
+        h1 {
+            font-family: Georgia, serif;
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .subtitle {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #cbd5e1;
+            margin-bottom: 6px;
+            margin-top: 14px;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 12px 14px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            color: #e5e7eb;
+            font-size: 15px;
+            font-family: inherit;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #63f1cb;
+            background: rgba(99, 241, 203, 0.05);
+        }
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .row-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        button.submit {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #63f1cb, #1fb88f);
+            color: #0a0a0f;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.15s;
+        }
+        button.submit:hover { transform: translateY(-1px); }
+        button.submit:disabled { opacity: 0.6; cursor: not-allowed; }
+        .pax-btn {
+            padding: 10px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #e5e7eb;
+            cursor: pointer;
+            font-size: 14px;
+            text-align: center;
+        }
+        .pax-btn.active {
+            background: rgba(99, 241, 203, 0.15);
+            border-color: #63f1cb;
+            color: #63f1cb;
+            font-weight: 700;
+        }
+        .success {
+            text-align: center;
+            padding: 20px;
+        }
+        .success-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+        .success h2 {
+            color: #63f1cb;
+            margin-bottom: 8px;
+        }
+        .error {
+            padding: 12px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 10px;
+            color: #fca5a5;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 11px;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="app">
+        <div class="header">
+            <div class="logo">🪑</div>
+            <h1 id="business-name">Reservá tu mesa</h1>
+            <div class="subtitle" id="business-sub">Completá el formulario y te confirmamos</div>
+        </div>
+
+        <form id="form">
+            <label>Nombre completo</label>
+            <input type="text" name="clienteNombre" required placeholder="Juan Pérez" />
+
+            <label>Teléfono / WhatsApp</label>
+            <input type="tel" name="clienteTel" required placeholder="+54 9 11 ..." />
+
+            <label>Email (opcional)</label>
+            <input type="email" name="clienteEmail" placeholder="email@ejemplo.com" />
+
+            <div class="row">
+                <div>
+                    <label>Fecha</label>
+                    <input type="date" name="fecha" required id="fecha" />
+                </div>
+                <div>
+                    <label>Hora</label>
+                    <input type="time" name="hora" required value="20:30" />
+                </div>
+            </div>
+
+            <label>¿Cuántas personas?</label>
+            <div class="row-3" id="pax-selector">
+                <div class="pax-btn" data-pax="2">2</div>
+                <div class="pax-btn" data-pax="4">4</div>
+                <div class="pax-btn active" data-pax="6">6</div>
+            </div>
+            <div class="row-3" style="margin-top:8px">
+                <div class="pax-btn" data-pax="8">8</div>
+                <div class="pax-btn" data-pax="10">10</div>
+                <div class="pax-btn" data-pax="12">12+</div>
+            </div>
+            <input type="hidden" name="personas" id="personas" value="6" />
+
+            <label>Notas (alergias, ocasión especial...)</label>
+            <textarea name="notas" rows="2" placeholder="Cumpleaños, sin TACC, etc."></textarea>
+
+            <div class="error" id="error" style="display:none"></div>
+
+            <button class="submit" type="submit" id="submit-btn">
+                Solicitar reserva →
+            </button>
+        </form>
+
+        <div class="success" id="success" style="display:none">
+            <div class="success-icon">🎉</div>
+            <h2>¡Reserva solicitada!</h2>
+            <p style="color:#94a3b8;font-size:14px;margin-bottom:12px">
+                Te vamos a contactar por WhatsApp al número que dejaste para confirmar.
+            </p>
+            <div id="success-detail" style="padding:12px;background:rgba(99,241,203,0.08);border-radius:10px;font-size:13px"></div>
+        </div>
+
+        <div class="footer">
+            Reservas online con Dashboard
+        </div>
+    </div>
+
+    <script>
+        // Leer params de URL
+        const params = new URLSearchParams(window.location.search);
+        const businessName = params.get('b') || 'Nuestro local';
+        const sucursalId = params.get('s') || '';
+        const slug = params.get('slug') || 'reserva';
+
+        document.getElementById('business-name').textContent = 'Reservá en ' + businessName;
+
+        // Min date = hoy
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        const fechaInput = document.getElementById('fecha');
+        fechaInput.min = `${yyyy}-${mm}-${dd}`;
+        fechaInput.value = `${yyyy}-${mm}-${dd}`;
+
+        // Pax selector
+        const paxButtons = document.querySelectorAll('.pax-btn');
+        const personasInput = document.getElementById('personas');
+        paxButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                paxButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                personasInput.value = btn.dataset.pax;
+            });
+        });
+
+        // Submit: guarda en localStorage bajo clave "pending_reservations_{slug}"
+        // Dashboard al abrir lee esa clave y crea reservas reales
+        // (No requiere backend — usa localStorage compartido por mismo dominio)
+        //
+        // IMPORTANTE: para multi-cliente real se puede cambiar a Firebase
+        // añadiendo un endpoint público que no requiera auth, usando
+        // Firestore rules con security-by-obscurity via el slug.
+        document.getElementById('form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('submit-btn');
+            const err = document.getElementById('error');
+            err.style.display = 'none';
+            btn.disabled = true;
+            btn.textContent = 'Enviando...';
+
+            const formData = new FormData(e.target);
+            const data = {
+                id: 'online_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+                clienteNombre: formData.get('clienteNombre'),
+                clienteTel: formData.get('clienteTel'),
+                clienteEmail: formData.get('clienteEmail'),
+                fecha: formData.get('fecha'),
+                hora: formData.get('hora'),
+                personas: Number(formData.get('personas')),
+                notas: formData.get('notas') || '',
+                sucursalId: sucursalId,
+                estado: 'pendiente',
+                origen: 'online',
+                creadaEn: new Date().toISOString()
+            };
+
+            try {
+                // Guardar en localStorage — el dashboard lo levantará en next load
+                const key = `pending_reservations_${slug}`;
+                const existing = JSON.parse(localStorage.getItem(key) || '[]');
+                existing.push(data);
+                localStorage.setItem(key, JSON.stringify(existing));
+
+                // Si hay Firebase configurado + un endpoint público, también lo mandamos ahí
+                // (por ahora solo localStorage)
+
+                // Mostrar success
+                document.getElementById('form').style.display = 'none';
+                document.getElementById('success').style.display = 'block';
+                const detail = document.getElementById('success-detail');
+                const fechaObj = new Date(data.fecha + 'T' + data.hora);
+                detail.innerHTML = `<strong>${fechaObj.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}</strong><br>
+                    ${data.hora}hs · ${data.personas} personas`;
+            } catch (error) {
+                err.textContent = 'Error al enviar: ' + error.message;
+                err.style.display = 'block';
+                btn.disabled = false;
+                btn.textContent = 'Solicitar reserva →';
+            }
+        });
+    </script>
+</body>
+</html>

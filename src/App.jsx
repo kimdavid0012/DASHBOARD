@@ -148,6 +148,21 @@ function AppContent() {
     const [page, setPage] = useState('home');
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
+    // Deep linking via URL ?nav=pos para shortcuts PWA y links directos
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const nav = params.get('nav');
+        const validPages = ['home', 'pos', 'kds', 'informes', 'afip', 'productos', 'ventas', 'clientes', 'empleados', 'mesas', 'reservas', 'sucursales', 'settings', 'account'];
+        if (nav && validPages.includes(nav)) {
+            setPage(nav);
+            // Limpia el query param sin recargar
+            const url = new URL(window.location);
+            url.searchParams.delete('nav');
+            url.searchParams.delete('source');
+            window.history.replaceState({}, '', url);
+        }
+    }, []);
+
     // Close mobile nav on page change
     useEffect(() => {
         setMobileNavOpen(false);

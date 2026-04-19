@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { BarChart3, TrendingUp, Store, Users, DollarSign, Package, Clock, Download, Printer } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
-import { PageHeader, Card, KpiCard, EmptyState, BarChart, LineChart, PieChart, fmtMoney, CHART_COLORS, InfoBox } from '../components/UI';
+import { PageHeader, Card, KpiCard, EmptyState, BarChart, LineChart, PieChart, fmtMoney, CHART_COLORS, InfoBox, DateRangeFilter, filterByDateRange, describeDateRange } from '../components/UI';
 import { useT } from '../i18n';
 
 export default function InformesPage() {
@@ -9,45 +9,56 @@ export default function InformesPage() {
     const { state } = useData();
     const labels = getRubroLabels(state.business.rubro);
     const [tab, setTab] = useState('general');
-    const [periodo, setPeriodo] = useState('30');
+    const [range, setRange] = useState({ type: 'month' });
     const current = state.meta.currentSucursalId || 'all';
 
     const ventas = useMemo(() => {
-        let list = filterBySucursal(state.ventas, current);
-        if (periodo !== 'all') {
-            const cutoff = new Date();
-            cutoff.setDate(cutoff.getDate() - Number(periodo));
-            list = list.filter(v => new Date(v.fecha || 0) >= cutoff);
-        }
-        return list;
-    }, [state.ventas, current, periodo]);
+        const list = filterBySucursal(state.ventas, current);
+        return filterByDateRange(list, range, v => v.fecha);
+    }, [state.ventas, current, range]);
 
     const gastos = useMemo(() => {
-        let list = filterBySucursal(state.gastos, current);
-        if (periodo !== 'all') {
-            const cutoff = new Date();
-            cutoff.setDate(cutoff.getDate() - Number(periodo));
-            list = list.filter(g => new Date(g.fecha || 0) >= cutoff);
-        }
-        return list;
-    }, [state.gastos, current, periodo]);
+        const list = filterBySucursal(state.gastos, current);
+        return filterByDateRange(list, range, g => g.fecha);
+    }, [state.gastos, current, range]);
 
     const totalVentas = ventas.reduce((s, v) => s + Number(v.total || 0), 0);
     const totalGastos = gastos.reduce((s, g) => s + Number(g.monto || 0), 0);
     const margen = totalVentas - totalGastos;
 
+    // Calcular días del rango para serieVentas
+    const diasEnRango = useMemo(() => {
+        switch (range.type) {
+            case 'today': return 1;
+            case 'yesterday': return 1;
+            case 'week': return 7;
+            case 'month': return 30;
+            case 'quarter': return 90;
+            case 'year': return 365;
+            case 'all': return Math.max(30, Math.min(365, Math.floor((Date.now() - new Date(state.ventas?.[0]?.fecha || Date.now()).getTime()) / 86400000) || 30));
+            case 'custom': {
+                if (!range.from || !range.to) return 30;
+                return Math.max(1, Math.ceil((new Date(range.to) - new Date(range.from)) / 86400000) + 1);
+            }
+            default: return 30;
+        }
+    }, [range, state.ventas]);
+
     const serieVentas = useMemo(() => {
-        const n = Number(periodo) || 30;
+        const n = Math.min(diasEnRango, 60); // Cap visual a 60 días
         const dias = [];
+        const endDate = range.type === 'yesterday' ? (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d; })() :
+                        range.type === 'custom' && range.to ? new Date(range.to) :
+                        new Date();
         for (let i = n - 1; i >= 0; i--) {
-            const d = new Date();
+            const d = new Date(endDate);
             d.setDate(d.getDate() - i);
             const key = d.toISOString().slice(0, 10);
             const total = ventas.filter(v => (v.fecha || '').slice(0, 10) === key).reduce((s, v) => s + Number(v.total || 0), 0);
             dias.push({ label: d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }), total });
         }
         return dias;
-    }, [ventas, periodo]);
+    }, [ventas, range, diasEnRango]);
 
     const porSucursal = useMemo(() => state.sucursales.map((s, i) => ({
         label: s.nombre,
@@ -155,7 +166,7 @@ export default function InformesPage() {
 
     // Ticket promedio
     const ticketPromedio = ventas.length > 0 ? totalVentas / ventas.length : 0;
-    const operacionesPorDia = ventas.length / (Number(periodo) || 30);
+    const operacionesPorDia = ventas.length / (diasEnRango || 30);
 
     if (state.ventas.length === 0 && state.gastos.length === 0) {
         return (
@@ -181,24 +192,22 @@ export default function InformesPage() {
                 subtitle="Reportes detallados del negocio"
                 help={SECTION_HELP.informes}
                 actions={
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <select className="select" style={{ maxWidth: 160 }} value={periodo} onChange={e => setPeriodo(e.target.value)}>
-                            <option value="7">Últimos 7 días</option>
-                            <option value="30">Últimos 30 días</option>
-                            <option value="90">Últimos 90 días</option>
-                            <option value="365">Último año</option>
-                            <option value="all">Todo</option>
-                        </select>
-                        <button
-                            className="btn btn-ghost btn-icon"
-                            onClick={() => window.print()}
-                            title="Imprimir / Guardar PDF"
-                        >
-                            <Printer size={16} />
-                        </button>
-                    </div>
+                    <button
+                        className="btn btn-ghost btn-icon"
+                        onClick={() => window.print()}
+                        title="Imprimir / Guardar PDF"
+                    >
+                        <Printer size={16} />
+                    </button>
                 }
             />
+
+            <div style={{ marginBottom: 16 }}>
+                <DateRangeFilter value={range} onChange={setRange} />
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                    📅 {describeDateRange(range)} · {ventas.length} operación{ventas.length !== 1 ? 'es' : ''} · {gastos.length} gasto{gastos.length !== 1 ? 's' : ''}
+                </div>
+            </div>
 
             <div className="tabs">
                 <button className={`tab ${tab === 'general' ? 'active' : ''}`} onClick={() => setTab('general')}><TrendingUp size={14} /> General</button>

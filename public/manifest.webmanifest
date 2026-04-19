@@ -2,25 +2,29 @@
   "name": "Dashboard — Business OS",
   "short_name": "Dashboard",
   "description": "Sistema de gestión todo-en-uno con IA para kioscos, restaurantes, retail y servicios",
-  "start_url": "/",
+  "id": "/?source=pwa",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "background_color": "#0a0a0f",
   "theme_color": "#63f1cb",
   "orientation": "any",
-  "icons": [
-    {
-      "src": "/icon-192.svg",
-      "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-512.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
-  ],
+  "dir": "ltr",
+  "lang": "es-AR",
   "categories": ["business", "productivity", "finance"],
-  "lang": "es-AR"
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-maskable.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "POS", "short_name": "Cobrar", "url": "/?nav=pos", "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }] },
+    { "name": "KDS Cocina", "short_name": "Cocina", "url": "/?nav=kds", "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }] },
+    { "name": "Informes", "short_name": "Informes", "url": "/?nav=informes", "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }] },
+    { "name": "Nueva factura", "short_name": "Factura", "url": "/?nav=afip", "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }] }
+  ],
+  "edge_side_panel": { "preferred_width": 420 },
+  "launch_handler": { "client_mode": ["navigate-existing", "auto"] }
 }
