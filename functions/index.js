@@ -485,3 +485,79 @@ export const onAgentOutputCreated = onDocumentCreated(
         });
     }
 );
+
+// ═══════════════════════════════════════════════════════════════════
+// WooCommerce Proxy — resuelve el CORS de WooCommerce
+// ═══════════════════════════════════════════════════════════════════
+/**
+ * PROBLEMA: WooCommerce no manda CORS headers en /wp-json/wc/v3/*
+ *           → el browser bloquea los fetch desde el frontend.
+ * SOLUCIÓN: Este proxy hace el fetch desde el backend (sin CORS)
+ *           y devuelve la data al frontend.
+ *
+ * Callable: wooFetch({ storeUrl, consumerKey, consumerSecret, endpoint, params? })
+ *   - endpoint: 'orders' | 'products' | 'reports/sales' | 'customers' | ...
+ *   - params: query params adicionales (per_page, orderby, etc)
+ *
+ * Seguridad: requiere auth de usuario. No almacena credenciales en backend.
+ */
+export const wooFetch = onCall(
+    { memory: '256MiB', timeoutSeconds: 30 },
+    async (req) => {
+        if (!req.auth) throw new HttpsError('unauthenticated', 'Login requerido');
+
+        const { storeUrl, consumerKey, consumerSecret, endpoint, params = {} } = req.data || {};
+        if (!storeUrl) throw new HttpsError('invalid-argument', 'storeUrl es requerido');
+        if (!consumerKey || !consumerSecret) throw new HttpsError('invalid-argument', 'Credenciales WooCommerce requeridas');
+        if (!endpoint) throw new HttpsError('invalid-argument', 'endpoint es requerido');
+
+        // Sanitizar endpoint — solo permitir WC REST paths conocidos
+        const allowedEndpoints = [
+            'orders', 'products', 'products/categories', 'customers',
+            'reports/sales', 'reports/top_sellers', 'reports/orders/totals',
+            'products/attributes', 'system_status'
+        ];
+        const endpointBase = endpoint.split('?')[0].split('/').slice(0, 2).join('/');
+        if (!allowedEndpoints.some(e => endpoint === e || endpoint.startsWith(e + '/'))) {
+            throw new HttpsError('invalid-argument', `Endpoint no permitido: ${endpoint}`);
+        }
+
+        const cleanUrl = storeUrl.replace(/\/$/, '');
+        const qs = new URLSearchParams();
+        Object.entries(params).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== '') qs.append(k, String(v));
+        });
+        const queryStr = qs.toString();
+        const fullUrl = `${cleanUrl}/wp-json/wc/v3/${endpoint}${queryStr ? '?' + queryStr : ''}`;
+
+        const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+
+        try {
+            const response = await fetch(fullUrl, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Accept': 'application/json',
+                    'User-Agent': 'Dashboard-Proxy/1.0'
+                }
+            });
+
+            if (!response.ok) {
+                const text = await response.text();
+                throw new HttpsError('internal',
+                    `WooCommerce respondió ${response.status}: ${text.slice(0, 200)}`);
+            }
+
+            const data = await response.json();
+            // Incluir headers útiles (total pages, total count)
+            const headers = {
+                totalPages: response.headers.get('x-wp-totalpages'),
+                total: response.headers.get('x-wp-total')
+            };
+            return { data, headers };
+        } catch (err) {
+            if (err instanceof HttpsError) throw err;
+            throw new HttpsError('internal', `Error conectando a ${cleanUrl}: ${err.message}`);
+        }
+    }
+);

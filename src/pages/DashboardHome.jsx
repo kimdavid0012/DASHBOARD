@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     TrendingUp, DollarSign, ShoppingCart, Users, Package,
     AlertTriangle, Store, Home, Calendar, RotateCcw, Settings as SettingsIcon,
@@ -6,13 +6,14 @@ import {
     Megaphone, Zap, Plus
 } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
-import { PageHeader, Card, KpiCard, EmptyState, BarChart, LineChart, fmtMoney, CHART_COLORS, InfoBox } from '../components/UI';
+import { PageHeader, Card, KpiCard, EmptyState, BarChart, LineChart, fmtMoney, CHART_COLORS, InfoBox, DateRangeFilter, filterByDateRange, describeDateRange } from '../components/UI';
 import { useT } from '../i18n';
 
 export default function DashboardHome({ onNavigate }) {
     const t = useT();
     const { state, actions } = useData();
     const current = state.meta.currentSucursalId || 'all';
+    const [range, setRange] = useState({ type: 'week' });
     const labels = getRubroLabels(state.business.rubro);
 
     const ventas = filterBySucursal(state.ventas, current);
@@ -33,17 +34,63 @@ export default function DashboardHome({ onNavigate }) {
         return { ventasHoy: ventasHoy.length, totalHoy, ventasMes: ventasMes.length, totalMes, stockBajo, sinStock };
     }, [ventas, productos]);
 
-    const chartVentas7d = useMemo(() => {
-        const dias = [];
-        for (let i = 6; i >= 0; i--) {
-            const d = new Date();
-            d.setDate(d.getDate() - i);
-            const key = d.toISOString().slice(0, 10);
-            const total = ventas.filter(v => (v.fecha || '').slice(0, 10) === key).reduce((s, v) => s + Number(v.total || 0), 0);
-            dias.push({ key, label: d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }), total });
+    // Chart dinámico según range
+    const chartVentasRange = useMemo(() => {
+        const ventasFiltradas = filterByDateRange(ventas, range, v => v.fecha);
+
+        // Determinar cantidad de días/buckets
+        let n = 7;
+        let bucketType = 'day';
+        switch (range.type) {
+            case 'today': n = 1; break;
+            case 'yesterday': n = 1; break;
+            case 'week': n = 7; break;
+            case 'month': n = 30; break;
+            case 'quarter': n = 12; bucketType = 'week'; break;
+            case 'year': n = 12; bucketType = 'month'; break;
+            case 'all': n = 12; bucketType = 'month'; break;
+            case 'custom': {
+                if (range.from && range.to) {
+                    const days = Math.ceil((new Date(range.to) - new Date(range.from)) / 86400000) + 1;
+                    if (days <= 31) { n = days; bucketType = 'day'; }
+                    else if (days <= 120) { n = Math.ceil(days / 7); bucketType = 'week'; }
+                    else { n = Math.ceil(days / 30); bucketType = 'month'; }
+                }
+                break;
+            }
         }
-        return dias;
-    }, [ventas]);
+
+        const buckets = [];
+        const now = new Date();
+        for (let i = n - 1; i >= 0; i--) {
+            const d = new Date();
+            if (bucketType === 'day') d.setDate(d.getDate() - i);
+            else if (bucketType === 'week') d.setDate(d.getDate() - (i * 7));
+            else d.setMonth(d.getMonth() - i);
+
+            let key, label, matchFn;
+            if (bucketType === 'day') {
+                key = d.toISOString().slice(0, 10);
+                label = d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+                matchFn = v => (v.fecha || '').slice(0, 10) === key;
+            } else if (bucketType === 'week') {
+                const start = new Date(d); start.setDate(start.getDate() - 6);
+                label = `${start.getDate()}/${start.getMonth() + 1}`;
+                matchFn = v => {
+                    const vd = new Date(v.fecha || 0);
+                    return vd >= start && vd <= d;
+                };
+            } else {
+                key = d.toISOString().slice(0, 7);
+                label = d.toLocaleDateString('es-AR', { month: 'short' }).replace('.', '');
+                matchFn = v => (v.fecha || '').slice(0, 7) === key;
+            }
+
+            const total = ventasFiltradas.filter(matchFn).reduce((s, v) => s + Number(v.total || 0), 0);
+            buckets.push({ label, total });
+        }
+        return buckets;
+    }, [ventas, range]);
 
     const ventasPorSucursal = useMemo(() => {
         if (current !== 'all' || !state.sucursales.length) return [];
@@ -424,10 +471,13 @@ export default function DashboardHome({ onNavigate }) {
                 </Card>
             ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
-                    <Card title={`${labels.sales} — últimos 7 días`} subtitle={current === 'all' ? 'Todas las sucursales' : state.sucursales.find(s => s.id === current)?.nombre}>
+                    <Card title={`${labels.sales} — ${describeDateRange(range)}`} subtitle={current === 'all' ? 'Todas las sucursales' : state.sucursales.find(s => s.id === current)?.nombre}>
+                        <div style={{ marginBottom: 12 }}>
+                            <DateRangeFilter value={range} onChange={setRange} compact />
+                        </div>
                         <LineChart
-                            series={[{ data: chartVentas7d.map(d => d.total), color: '#63f1cb' }]}
-                            labels={chartVentas7d.map(d => d.label)}
+                            series={[{ data: chartVentasRange.map(d => d.total), color: '#63f1cb' }]}
+                            labels={chartVentasRange.map(d => d.label)}
                         />
                     </Card>
 

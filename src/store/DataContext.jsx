@@ -180,6 +180,74 @@ export function DataProvider({ children }) {
         };
     }, [state]);
 
+    // ───── IMPORTAR RESERVAS ONLINE PENDIENTES ─────
+    // Lee localStorage (donde reservar.html guardó reservas del público)
+    // y las incorpora a state.reservas cada vez que el dashboard carga o vuelve a foco
+    useEffect(() => {
+        if (!hydrated) return;
+
+        const importPendingReservations = () => {
+            try {
+                const slug = (state.business?.name || 'reserva')
+                    .toLowerCase().trim()
+                    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+                const key = `pending_reservations_${slug}`;
+                const pendingRaw = localStorage.getItem(key);
+                if (!pendingRaw) return;
+                const pending = JSON.parse(pendingRaw);
+                if (!Array.isArray(pending) || pending.length === 0) return;
+
+                // Evitar duplicados: si ya existe una reserva con el mismo id, skipearla
+                const existingIds = new Set((state.reservas || []).map(r => r.id));
+                const nuevas = pending.filter(r => !existingIds.has(r.id));
+
+                if (nuevas.length === 0) {
+                    // Ya están todas, limpiamos el localStorage
+                    localStorage.removeItem(key);
+                    return;
+                }
+
+                // Bulk add al state real
+                dispatch({ type: 'BULK_ADD', payload: { collection: 'reservas', items: nuevas } });
+
+                // Notificación local al dueño
+                if ('Notification' in window && Notification.permission === 'granted') {
+                    import('../utils/notifications').then(({ showLocalNotification }) => {
+                        showLocalNotification({
+                            title: `🎉 ${nuevas.length} reserva${nuevas.length > 1 ? 's' : ''} nueva${nuevas.length > 1 ? 's' : ''}`,
+                            body: nuevas.map(r => `${r.clienteNombre} · ${r.fecha} ${r.hora} · ${r.personas}pax`).slice(0, 3).join('\n'),
+                            tag: 'online-reservations',
+                            url: '/?nav=reservas'
+                        });
+                    });
+                }
+
+                // Limpiar localStorage ahora que están en el state
+                localStorage.removeItem(key);
+            } catch (err) {
+                console.warn('Error importing pending reservations:', err);
+            }
+        };
+
+        // Correr al arrancar
+        importPendingReservations();
+
+        // Y cada vez que la tab vuelve a foco (el cliente puede haber reservado mientras)
+        const onFocus = () => importPendingReservations();
+        const onVisibility = () => { if (document.visibilityState === 'visible') importPendingReservations(); };
+        window.addEventListener('focus', onFocus);
+        document.addEventListener('visibilitychange', onVisibility);
+
+        // Cada 30s también, por si dejó la tab abierta
+        const interval = setInterval(importPendingReservations, 30 * 1000);
+
+        return () => {
+            window.removeEventListener('focus', onFocus);
+            document.removeEventListener('visibilitychange', onVisibility);
+            clearInterval(interval);
+        };
+    }, [hydrated, state.business?.name, state.reservas]);
+
     const actions = {
         updateBusiness: (patch) => dispatch({ type: 'UPDATE_BUSINESS', payload: patch }),
         updateIntegraciones: (patch) => dispatch({ type: 'UPDATE_INTEGRACIONES', payload: patch }),

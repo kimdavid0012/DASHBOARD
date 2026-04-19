@@ -192,13 +192,25 @@ export default function InformesPage() {
                 subtitle="Reportes detallados del negocio"
                 help={SECTION_HELP.informes}
                 actions={
-                    <button
-                        className="btn btn-ghost btn-icon"
-                        onClick={() => window.print()}
-                        title="Imprimir / Guardar PDF"
-                    >
-                        <Printer size={16} />
-                    </button>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <button
+                            className="btn btn-primary btn-sm"
+                            onClick={async () => {
+                                const { exportInformes } = await import('../utils/excelExport');
+                                await exportInformes(state, range, describeDateRange(range));
+                            }}
+                            title="Exportar a Excel"
+                        >
+                            <Download size={14} /> Excel
+                        </button>
+                        <button
+                            className="btn btn-ghost btn-icon"
+                            onClick={() => window.print()}
+                            title="Imprimir / Guardar PDF"
+                        >
+                            <Printer size={16} />
+                        </button>
+                    </div>
                 }
             />
 

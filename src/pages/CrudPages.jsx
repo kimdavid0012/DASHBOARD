@@ -355,6 +355,16 @@ export function AsistenciaPage() {
     const [open, setOpen] = useState(false);
     const EMPTY = { fecha: new Date().toISOString().slice(0, 10), empleadoId: '', tipo: 'presente', notas: '' };
     const [form, setForm] = useState(EMPTY);
+    const [viewMode, setViewMode] = useState('list'); // list | kiosk
+    const [kioskMsg, setKioskMsg] = useState('');
+    const [kioskLoading, setKioskLoading] = useState(false);
+    const [webAuthnSupported, setWebAuthnSupported] = useState(false);
+
+    React.useEffect(() => {
+        import('../utils/webauthn').then(mod => {
+            mod.isPlatformAuthenticatorAvailable().then(setWebAuthnSupported);
+        });
+    }, []);
 
     const empleados = filterBySucursal(state.empleados, current);
     const asistencia = state.asistencia.filter(a => empleados.some(e => e.id === a.empleadoId)).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
@@ -373,6 +383,69 @@ export function AsistenciaPage() {
         setOpen(false);
     };
 
+    const enrollEmployeeBiometric = async (empleadoId) => {
+        const emp = state.empleados.find(e => e.id === empleadoId);
+        if (!emp) return;
+        try {
+            const { enrollEmployee } = await import('../utils/webauthn');
+            const cred = await enrollEmployee({
+                empleadoId,
+                nombre: `${emp.nombre || ''} ${emp.apellido || ''}`.trim(),
+                businessName: state.business.name || 'Dashboard'
+            });
+            actions.update('empleados', empleadoId, {
+                webauthnCredentialId: cred.credentialId,
+                webauthnRegisteredAt: cred.registeredAt
+            });
+            alert(`✅ ${emp.nombre} registrado. Ahora puede fichar con huella.`);
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    };
+
+    const kioskFichar = async () => {
+        setKioskMsg(''); setKioskLoading(true);
+        try {
+            const { authenticateForAttendance } = await import('../utils/webauthn');
+            const empleadosConCred = empleados.filter(e => e.webauthnCredentialId);
+            if (empleadosConCred.length === 0) {
+                setKioskMsg('⚠️ Primero registrá al menos un empleado con huella (modo Lista → botón Huella)');
+                setKioskLoading(false);
+                return;
+            }
+            const credentialId = await authenticateForAttendance({
+                allowedCredentialIds: empleadosConCred.map(e => e.webauthnCredentialId)
+            });
+            const emp = empleadosConCred.find(e => e.webauthnCredentialId === credentialId);
+            if (!emp) {
+                setKioskMsg('⚠️ Credencial no reconocida');
+                setKioskLoading(false);
+                return;
+            }
+            const hoy = new Date().toISOString().slice(0, 10);
+            // ¿Ya fichó hoy? Si sí, marcamos salida (update con hora)
+            const hoyEntry = state.asistencia.find(a => a.empleadoId === emp.id && a.fecha === hoy);
+            const now = new Date();
+            const hora = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+            if (!hoyEntry) {
+                actions.add('asistencia', {
+                    empleadoId: emp.id, fecha: hoy, tipo: 'presente',
+                    entrada: hora, notas: 'Fichaje biométrico'
+                });
+                setKioskMsg(`✅ ¡Bienvenido/a ${emp.nombre}! Entrada registrada a las ${hora}`);
+            } else if (!hoyEntry.salida) {
+                actions.update('asistencia', hoyEntry.id, { salida: hora });
+                setKioskMsg(`👋 Hasta luego ${emp.nombre}. Salida ${hora}. ¡Buen trabajo!`);
+            } else {
+                setKioskMsg(`ℹ️ ${emp.nombre}, ya ficharon entrada y salida hoy.`);
+            }
+        } catch (err) {
+            setKioskMsg('⚠️ ' + err.message);
+        } finally {
+            setKioskLoading(false);
+        }
+    };
+
     return (
         <div>
             <PageHeader
@@ -380,15 +453,153 @@ export function AsistenciaPage() {
                 title="Asistencia"
                 subtitle="Presentismo del equipo"
                 help={SECTION_HELP.asistencia}
-                actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setOpen(true); }} disabled={empleados.length === 0}><Plus size={14} /> Registrar</button>}
+                actions={
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', background: 'var(--bg-elevated)', borderRadius: 8, padding: 2 }}>
+                            <button
+                                onClick={() => setViewMode('list')}
+                                style={{
+                                    padding: '6px 12px',
+                                    background: viewMode === 'list' ? 'var(--accent-soft)' : 'transparent',
+                                    color: viewMode === 'list' ? 'var(--accent)' : 'var(--text-muted)',
+                                    border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600
+                                }}
+                            >
+                                📋 Lista
+                            </button>
+                            <button
+                                onClick={() => setViewMode('kiosk')}
+                                disabled={!webAuthnSupported}
+                                title={webAuthnSupported ? 'Modo kiosk — fichaje con huella' : 'WebAuthn no disponible en este dispositivo'}
+                                style={{
+                                    padding: '6px 12px',
+                                    background: viewMode === 'kiosk' ? 'var(--accent-soft)' : 'transparent',
+                                    color: viewMode === 'kiosk' ? 'var(--accent)' : 'var(--text-muted)',
+                                    border: 'none', borderRadius: 6,
+                                    cursor: webAuthnSupported ? 'pointer' : 'not-allowed',
+                                    opacity: webAuthnSupported ? 1 : 0.4,
+                                    fontSize: 12, fontWeight: 600
+                                }}
+                            >
+                                👆 Reloj kiosk
+                            </button>
+                        </div>
+                        {viewMode === 'list' && (
+                            <button className="btn btn-primary" onClick={() => { setForm(EMPTY); setOpen(true); }} disabled={empleados.length === 0}>
+                                <Plus size={14} /> Registrar
+                            </button>
+                        )}
+                    </div>
+                }
             />
+
+            {viewMode === 'kiosk' ? (
+                <Card>
+                    <div style={{
+                        minHeight: 400, display: 'flex', flexDirection: 'column',
+                        alignItems: 'center', justifyContent: 'center', padding: 24, gap: 20
+                    }}>
+                        <div style={{
+                            fontSize: 72, lineHeight: 1,
+                            filter: 'drop-shadow(0 0 20px rgba(99,241,203,0.5))'
+                        }}>
+                            👆
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 28, margin: 0 }}>
+                                Reloj de asistencia
+                            </h2>
+                            <div style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 6 }}>
+                                {empleados.filter(e => e.webauthnCredentialId).length} empleado{empleados.filter(e => e.webauthnCredentialId).length !== 1 ? 's' : ''} con huella registrada
+                            </div>
+                            <div style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 2 }}>
+                                {new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })} · {new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                        </div>
+
+                        <button
+                            className="btn btn-primary"
+                            onClick={kioskFichar}
+                            disabled={kioskLoading}
+                            style={{
+                                padding: '18px 40px', fontSize: 18, fontWeight: 700,
+                                borderRadius: 14, minWidth: 280
+                            }}
+                        >
+                            {kioskLoading ? '⏳ Esperando huella...' : '👆 Fichar con huella'}
+                        </button>
+
+                        {kioskMsg && (
+                            <div style={{
+                                padding: '16px 24px',
+                                background: kioskMsg.startsWith('✅') || kioskMsg.startsWith('👋')
+                                    ? 'rgba(99,241,203,0.1)'
+                                    : 'rgba(245,158,11,0.1)',
+                                border: `1px solid ${kioskMsg.startsWith('✅') || kioskMsg.startsWith('👋') ? 'var(--border-accent)' : 'rgba(245,158,11,0.3)'}`,
+                                borderRadius: 12,
+                                fontSize: 16, fontWeight: 500,
+                                textAlign: 'center', maxWidth: 500
+                            }}>
+                                {kioskMsg}
+                            </div>
+                        )}
+
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', marginTop: 16, maxWidth: 500 }}>
+                            💡 Este modo es para dejar una tablet/celular en la entrada del local.
+                            Cada empleado ficha tocando el botón y usando su huella (la misma que usa para desbloquear su device).
+                        </div>
+                    </div>
+                </Card>
+            ) : (
             <Card>
                 {empleados.length === 0 ? (
                     <EmptyState icon={UserCheck} title="Primero cargá empleados" description="Necesitás tener empleados para registrar asistencia." />
                 ) : asistencia.length === 0 ? (
                     <EmptyState icon={UserCheck} title="Sin registros" description="Marcá día a día quién vino a trabajar." action={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={14} /> Primer registro</button>} tips={['Presente, ausente, tardanza, licencia, feriado', 'Histórico completo por empleado', '% de asistencia en Informes']} example="Ej: Viernes 18/04 - Juan Pérez - Presente" />
                 ) : (
-                    <div className="table-wrap">
+                    <>
+                        {webAuthnSupported && empleados.length > 0 && (
+                            <div style={{
+                                padding: 12, marginBottom: 12,
+                                background: 'var(--bg-elevated)', borderRadius: 10,
+                                border: '1px solid var(--border-color)'
+                            }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+                                    👆 Fichaje biométrico — empleados registrados:
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    {empleados.map(emp => (
+                                        <button
+                                            key={emp.id}
+                                            onClick={() => {
+                                                if (emp.webauthnCredentialId) {
+                                                    if (confirm(`¿Borrar la huella registrada de ${emp.nombre}?`)) {
+                                                        actions.update('empleados', emp.id, { webauthnCredentialId: null });
+                                                    }
+                                                } else {
+                                                    enrollEmployeeBiometric(emp.id);
+                                                }
+                                            }}
+                                            style={{
+                                                padding: '6px 12px',
+                                                background: emp.webauthnCredentialId ? 'rgba(99,241,203,0.1)' : 'transparent',
+                                                border: `1px solid ${emp.webauthnCredentialId ? 'var(--border-accent)' : 'var(--border-color)'}`,
+                                                borderRadius: 8,
+                                                cursor: 'pointer',
+                                                fontSize: 12,
+                                                color: emp.webauthnCredentialId ? 'var(--accent)' : 'var(--text-muted)'
+                                            }}
+                                        >
+                                            {emp.webauthnCredentialId ? '✓' : '+'} {emp.nombre} {emp.apellido || ''}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+                                    💡 Tocá a un empleado para registrarle la huella de este dispositivo. Después podés usar "Reloj kiosk" para fichar con huella/face.
+                                </div>
+                            </div>
+                        )}
+                        <div className="table-wrap">
                         <table className="table">
                             <thead><tr><th>Fecha</th><th>Empleado</th><th>Tipo</th><th>Notas</th><th></th></tr></thead>
                             <tbody>
@@ -407,9 +618,11 @@ export function AsistenciaPage() {
                                 })}
                             </tbody>
                         </table>
-                    </div>
+                        </div>
+                    </>
                 )}
             </Card>
+            )}
             <Modal open={open} onClose={() => setOpen(false)} title="Registrar asistencia">
                 <div className="form-grid">
                     <Field label="Fecha"><input className="input" type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></Field>

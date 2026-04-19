@@ -501,24 +501,22 @@ function WooCommerceDashboard({ state, onNavigate, hasCreds }) {
         }
         setLoading(true); setError('');
         try {
-            const auth = btoa(`${ck}:${cs}`);
-            const headers = { 'Authorization': `Basic ${auth}`, 'Accept': 'application/json' };
+            const { wooFetchAll } = await import('../utils/wooClient');
+            const result = await wooFetchAll({
+                storeUrl,
+                consumerKey: ck,
+                consumerSecret: cs
+            });
 
-            // Fetch en paralelo
-            const [ordersRes, productsRes, reportsRes] = await Promise.all([
-                fetch(`${storeUrl}/wp-json/wc/v3/orders?per_page=50&orderby=date&order=desc`, { headers }),
-                fetch(`${storeUrl}/wp-json/wc/v3/products?per_page=100&orderby=popularity`, { headers }),
-                fetch(`${storeUrl}/wp-json/wc/v3/reports/sales?period=month`, { headers }).catch(() => null)
-            ]);
-
-            if (!ordersRes.ok) throw new Error(`Error ${ordersRes.status}: ${ordersRes.statusText}. Verificá tus credenciales.`);
-
-            const orders = await ordersRes.json();
-            const products = productsRes.ok ? await productsRes.json() : [];
-            const reports = (reportsRes && reportsRes.ok) ? await reportsRes.json() : null;
+            if (result.errors.length > 0 && result.orders.length === 0) {
+                throw new Error(result.errors[0]);
+            }
 
             const payload = {
-                orders, products, reports,
+                orders: result.orders,
+                products: result.products,
+                reports: result.reports,
+                via: result.via,
                 fetchedAt: new Date().toISOString()
             };
             setData(payload);
@@ -586,6 +584,11 @@ function WooCommerceDashboard({ state, onNavigate, hasCreds }) {
                 help={SECTION_HELP.web}
                 actions={
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        {data?.via && (
+                            <Badge variant={data.via === 'cloud' ? 'success' : data.via === 'direct' ? 'info' : 'warning'}>
+                                {data.via === 'cloud' ? '☁️ Cloud' : data.via === 'direct' ? '🌐 Directo' : '🔄 Proxy'}
+                            </Badge>
+                        )}
                         {data?.fetchedAt && (
                             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                                 Actualizado: {new Date(data.fetchedAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
@@ -603,7 +606,17 @@ function WooCommerceDashboard({ state, onNavigate, hasCreds }) {
 
             {error && (
                 <InfoBox variant="warning">
-                    <strong>Error al conectar:</strong> {error}
+                    <strong>No se pudo conectar con WooCommerce</strong>
+                    <div style={{ fontSize: 13, marginTop: 8, whiteSpace: 'pre-wrap' }}>{error}</div>
+                    <div style={{ fontSize: 12, marginTop: 12, padding: 10, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                        <strong>💡 Soluciones posibles:</strong>
+                        <ol style={{ margin: '6px 0 0 20px', padding: 0 }}>
+                            <li>Verificá que Consumer Key y Secret estén correctos</li>
+                            <li>Activá Cloud mode (Cuenta → Entrar con Google) para usar proxy seguro</li>
+                            <li>Instalá el plugin "WP CORS" en tu WordPress para permitir fetch directo</li>
+                            <li>Verificá que tu sitio sea accesible con HTTPS</li>
+                        </ol>
+                    </div>
                 </InfoBox>
             )}
 
