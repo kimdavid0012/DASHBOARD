@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { BarChart3, TrendingUp, Store, Users, DollarSign } from 'lucide-react';
+import { BarChart3, TrendingUp, Store, Users, DollarSign, Package, Clock, Download, Printer } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, KpiCard, EmptyState, BarChart, LineChart, PieChart, fmtMoney, CHART_COLORS, InfoBox } from '../components/UI';
 import { useT } from '../i18n';
@@ -86,6 +86,77 @@ export default function InformesPage() {
         return Object.entries(agg).map(([label, value], i) => ({ label, value, color: CHART_COLORS[i % CHART_COLORS.length] }));
     }, [ventas]);
 
+    // Top productos vendidos (por revenue)
+    const topProductos = useMemo(() => {
+        const agg = {}; // productoId -> { nombre, cantidad, revenue }
+        ventas.forEach(v => {
+            (v.items || []).forEach(it => {
+                const key = it.productoId || it.nombre;
+                if (!agg[key]) agg[key] = { nombre: it.nombre, cantidad: 0, revenue: 0 };
+                agg[key].cantidad += Number(it.cantidad || 0);
+                agg[key].revenue += Number(it.precio || 0) * Number(it.cantidad || 0);
+            });
+        });
+        return Object.values(agg)
+            .sort((a, b) => b.revenue - a.revenue)
+            .slice(0, 10)
+            .map((p, i) => ({
+                label: p.nombre,
+                value: p.revenue,
+                cantidad: p.cantidad,
+                display: fmtMoney(p.revenue, state.business.moneda),
+                color: CHART_COLORS[i % CHART_COLORS.length]
+            }));
+    }, [ventas, state.business.moneda]);
+
+    // Top variantes (talle + color) — solo si hay ventas con variantLabel
+    const topVariantes = useMemo(() => {
+        const agg = {};
+        ventas.forEach(v => {
+            (v.items || []).forEach(it => {
+                if (!it.variantLabel) return;
+                const key = `${it.nombre} · ${it.variantLabel}`;
+                if (!agg[key]) agg[key] = { cantidad: 0, revenue: 0 };
+                agg[key].cantidad += Number(it.cantidad || 0);
+                agg[key].revenue += Number(it.precio || 0) * Number(it.cantidad || 0);
+            });
+        });
+        return Object.entries(agg)
+            .sort((a, b) => b[1].revenue - a[1].revenue)
+            .slice(0, 10)
+            .map(([label, data], i) => ({
+                label,
+                value: data.revenue,
+                cantidad: data.cantidad,
+                display: fmtMoney(data.revenue, state.business.moneda),
+                color: CHART_COLORS[i % CHART_COLORS.length]
+            }));
+    }, [ventas, state.business.moneda]);
+
+    // Ventas por categoría
+    const porCategoria = useMemo(() => {
+        const agg = {};
+        ventas.forEach(v => {
+            (v.items || []).forEach(it => {
+                const prod = state.productos?.find(p => p.id === it.productoId);
+                const cat = prod?.categoria || 'Sin categoría';
+                if (!agg[cat]) agg[cat] = 0;
+                agg[cat] += Number(it.precio || 0) * Number(it.cantidad || 0);
+            });
+        });
+        return Object.entries(agg)
+            .map(([label, value], i) => ({
+                label, value,
+                display: fmtMoney(value, state.business.moneda),
+                color: CHART_COLORS[i % CHART_COLORS.length]
+            }))
+            .sort((a, b) => b.value - a.value);
+    }, [ventas, state.productos, state.business.moneda]);
+
+    // Ticket promedio
+    const ticketPromedio = ventas.length > 0 ? totalVentas / ventas.length : 0;
+    const operacionesPorDia = ventas.length / (Number(periodo) || 30);
+
     if (state.ventas.length === 0 && state.gastos.length === 0) {
         return (
             <div>
@@ -110,18 +181,28 @@ export default function InformesPage() {
                 subtitle="Reportes detallados del negocio"
                 help={SECTION_HELP.informes}
                 actions={
-                    <select className="select" style={{ maxWidth: 160 }} value={periodo} onChange={e => setPeriodo(e.target.value)}>
-                        <option value="7">Últimos 7 días</option>
-                        <option value="30">Últimos 30 días</option>
-                        <option value="90">Últimos 90 días</option>
-                        <option value="365">Último año</option>
-                        <option value="all">Todo</option>
-                    </select>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <select className="select" style={{ maxWidth: 160 }} value={periodo} onChange={e => setPeriodo(e.target.value)}>
+                            <option value="7">Últimos 7 días</option>
+                            <option value="30">Últimos 30 días</option>
+                            <option value="90">Últimos 90 días</option>
+                            <option value="365">Último año</option>
+                            <option value="all">Todo</option>
+                        </select>
+                        <button
+                            className="btn btn-ghost btn-icon"
+                            onClick={() => window.print()}
+                            title="Imprimir / Guardar PDF"
+                        >
+                            <Printer size={16} />
+                        </button>
+                    </div>
                 }
             />
 
             <div className="tabs">
                 <button className={`tab ${tab === 'general' ? 'active' : ''}`} onClick={() => setTab('general')}><TrendingUp size={14} /> General</button>
+                <button className={`tab ${tab === 'productos' ? 'active' : ''}`} onClick={() => setTab('productos')}><Package size={14} /> {labels.items}</button>
                 <button className={`tab ${tab === 'sucursal' ? 'active' : ''}`} onClick={() => setTab('sucursal')}><Store size={14} /> Por sucursal</button>
                 <button className={`tab ${tab === 'empleado' ? 'active' : ''}`} onClick={() => setTab('empleado')}><Users size={14} /> Por empleado</button>
                 <button className={`tab ${tab === 'financiero' ? 'active' : ''}`} onClick={() => setTab('financiero')}><DollarSign size={14} /> Financiero</button>
@@ -129,8 +210,8 @@ export default function InformesPage() {
 
             <div className="kpi-grid mb-4">
                 <KpiCard icon={<TrendingUp size={20} />} label={`${labels.sales} (período)`} value={fmtMoney(totalVentas, state.business.moneda)} color="#63f1cb" />
-                <KpiCard icon={<TrendingUp size={20} />} label="Operaciones" value={ventas.length} color="#60a5fa" />
-                <KpiCard icon={<DollarSign size={20} />} label="Gastos (período)" value={fmtMoney(totalGastos, state.business.moneda)} color="#ef4444" />
+                <KpiCard icon={<TrendingUp size={20} />} label="Ticket promedio" value={fmtMoney(ticketPromedio, state.business.moneda)} color="#a78bfa" />
+                <KpiCard icon={<DollarSign size={20} />} label="Operaciones" value={ventas.length} color="#60a5fa" />
                 <KpiCard icon={<DollarSign size={20} />} label="Margen (V − G)" value={fmtMoney(margen, state.business.moneda)} color={margen >= 0 ? '#22c55e' : '#ef4444'} />
             </div>
 
@@ -138,6 +219,56 @@ export default function InformesPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
                     <Card title="Evolución de ventas"><LineChart series={[{ data: serieVentas.map(d => d.total), color: '#63f1cb' }]} labels={serieVentas.map(d => d.label).filter((_, i, arr) => i % Math.ceil(arr.length / 7) === 0)} /></Card>
                     <Card title="Ventas por método"><BarChart data={metodoVentas.map(m => ({ ...m, display: fmtMoney(m.value, state.business.moneda) }))} /></Card>
+                </div>
+            )}
+
+            {tab === 'productos' && (
+                <div style={{ display: 'grid', gap: 16 }}>
+                    {topProductos.length === 0 ? (
+                        <Card>
+                            <EmptyState title={`Sin ventas de ${labels.items.toLowerCase()}`} description="Cargá algunas ventas para ver los rankings." />
+                        </Card>
+                    ) : (
+                        <>
+                            <Card title={`Top ${labels.items.toLowerCase()} por facturación`} subtitle={`Ranking de los 10 más vendidos (por revenue)`}>
+                                <BarChart data={topProductos} />
+                                <div className="table-wrap mt-4">
+                                    <table className="table">
+                                        <thead><tr><th>#</th><th>{labels.item}</th><th style={{ textAlign: 'right' }}>Cantidad</th><th style={{ textAlign: 'right' }}>Facturado</th></tr></thead>
+                                        <tbody>
+                                            {topProductos.map((p, i) => (
+                                                <tr key={i}>
+                                                    <td style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+                                                    <td className="font-semibold">{p.label}</td>
+                                                    <td style={{ textAlign: 'right' }}>{p.cantidad}</td>
+                                                    <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--accent)' }}>{p.display}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </Card>
+
+                            {topVariantes.length > 0 && (
+                                <Card title="Top variantes vendidas" subtitle="Talles/colores más pedidos">
+                                    <BarChart data={topVariantes} />
+                                </Card>
+                            )}
+
+                            {porCategoria.length > 1 && (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+                                    <Card title="Ventas por categoría">
+                                        <BarChart data={porCategoria} />
+                                    </Card>
+                                    <Card title="Distribución">
+                                        <div style={{ textAlign: 'center' }}>
+                                            <PieChart data={porCategoria} size={200} />
+                                        </div>
+                                    </Card>
+                                </div>
+                            )}
+                        </>
+                    )}
                 </div>
             )}
 

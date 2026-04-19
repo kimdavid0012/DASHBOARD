@@ -63,41 +63,126 @@ export function MesasPage() {
                         ]}
                         example="Salón principal: mesas 1-15 (4 pax), mesas 16-20 (6 pax). Terraza: mesas 21-28. Barra: 6 banquetas."
                     />
-                ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 }}>
-                        {mesas.sort((a, b) => a.numero - b.numero).map(m => {
-                            const color = m.estado === 'libre' ? '#22c55e' : m.estado === 'ocupada' ? '#f59e0b' : '#a855f7';
-                            return (
-                                <div key={m.id} style={{
-                                    background: 'var(--bg-elevated)',
-                                    border: `2px solid ${color}`,
-                                    borderRadius: 12,
-                                    padding: 16,
-                                    textAlign: 'center'
-                                }}>
-                                    <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)' }}>
-                                        {m.numero}
+                ) : (() => {
+                    // Agrupar por ubicación
+                    const grupos = {};
+                    mesas.forEach(m => {
+                        const loc = m.ubicacion || 'Salón';
+                        if (!grupos[loc]) grupos[loc] = [];
+                        grupos[loc].push(m);
+                    });
+
+                    // Para cada mesa, buscar si tiene comanda activa (venta con kdsEstado != entregada)
+                    const comandaDe = (mesaId) => {
+                        return (state.ventas || []).find(v =>
+                            v.mesaId === mesaId &&
+                            v.kdsEstado !== 'entregada' &&
+                            (Date.now() - new Date(v.fecha).getTime()) < 8 * 60 * 60 * 1000
+                        );
+                    };
+
+                    const mesaEmoji = (cap) => {
+                        if (cap <= 2) return '🪑'; if (cap <= 4) return '🪑🪑';
+                        if (cap <= 6) return '🪑×6'; return '🪑×' + cap;
+                    };
+
+                    return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                            {Object.keys(grupos).sort().map(loc => (
+                                <div key={loc}>
+                                    <div style={{
+                                        fontFamily: 'var(--font-display)',
+                                        fontSize: 16, fontWeight: 700,
+                                        marginBottom: 12,
+                                        color: 'var(--text-primary)',
+                                        borderLeft: '3px solid var(--accent)',
+                                        paddingLeft: 10
+                                    }}>
+                                        📍 {loc} <span style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 400 }}>· {grupos[loc].length} mesa{grupos[loc].length !== 1 ? 's' : ''}</span>
                                     </div>
-                                    <div className="text-xs text-muted mt-1">
-                                        <Users size={10} style={{ display: 'inline' }} /> {m.capacidad} pax · {m.ubicacion}
-                                    </div>
-                                    <Badge variant={m.estado === 'libre' ? 'success' : m.estado === 'ocupada' ? 'warning' : 'info'} >
-                                        {m.estado}
-                                    </Badge>
-                                    <div className="flex gap-1 mt-2" style={{ justifyContent: 'center' }}>
-                                        {['libre', 'ocupada', 'reservada'].filter(e => e !== m.estado).map(e => (
-                                            <button key={e} className="btn btn-ghost btn-sm" style={{ fontSize: 9, padding: '2px 6px' }} onClick={() => cambiarEstado(m.id, e)}>{e}</button>
-                                        ))}
-                                    </div>
-                                    <div className="flex gap-1 mt-2" style={{ justifyContent: 'center' }}>
-                                        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setForm({ ...EMPTY, ...m }); setEditId(m.id); setOpen(true); }}><Pencil size={10} /></button>
-                                        <button className="btn btn-danger btn-sm btn-icon" onClick={() => { if (confirm('¿Eliminar mesa?')) actions.remove('mesas', m.id); }}><Trash2 size={10} /></button>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
+                                        {grupos[loc].sort((a, b) => a.numero - b.numero).map(m => {
+                                            const comanda = comandaDe(m.id);
+                                            const estado = comanda ? 'ocupada' : m.estado;
+                                            const color = estado === 'libre' ? '#22c55e' : estado === 'ocupada' ? '#f59e0b' : '#a855f7';
+                                            const bg = estado === 'libre' ? 'rgba(34,197,94,0.06)' : estado === 'ocupada' ? 'rgba(245,158,11,0.08)' : 'rgba(168,85,247,0.06)';
+                                            const ageMin = comanda ? Math.floor((Date.now() - new Date(comanda.fecha).getTime()) / 60000) : 0;
+                                            const total = comanda ? Number(comanda.total || 0) : 0;
+
+                                            return (
+                                                <div key={m.id} style={{
+                                                    background: bg,
+                                                    border: `2px solid ${color}`,
+                                                    borderRadius: 14,
+                                                    padding: 14,
+                                                    textAlign: 'center',
+                                                    position: 'relative',
+                                                    transition: 'transform 0.15s var(--ease)',
+                                                    cursor: 'pointer'
+                                                }}
+                                                onMouseOver={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                                                onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}>
+                                                    <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+                                                        {m.numero}
+                                                    </div>
+                                                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                                                        <Users size={9} style={{ display: 'inline', verticalAlign: 'middle' }} /> {m.capacidad} pax
+                                                    </div>
+
+                                                    {/* Estado badge */}
+                                                    <div style={{
+                                                        display: 'inline-block',
+                                                        padding: '3px 10px',
+                                                        background: color,
+                                                        color: '#0a0a0f',
+                                                        fontSize: 10,
+                                                        fontWeight: 700,
+                                                        textTransform: 'uppercase',
+                                                        borderRadius: 20,
+                                                        marginTop: 8
+                                                    }}>
+                                                        {estado}
+                                                    </div>
+
+                                                    {/* Comanda info */}
+                                                    {comanda && (
+                                                        <div style={{
+                                                            marginTop: 8, padding: '6px 8px',
+                                                            background: 'rgba(0,0,0,0.15)',
+                                                            borderRadius: 8,
+                                                            fontSize: 11,
+                                                            lineHeight: 1.4
+                                                        }}>
+                                                            <div><strong>${total.toLocaleString('es-AR')}</strong></div>
+                                                            <div style={{ color: ageMin > 60 ? 'var(--danger, #fb7185)' : 'var(--text-muted)' }}>
+                                                                ⏱️ {ageMin}min {ageMin > 60 ? '⚠️' : ''}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Quick estado buttons */}
+                                                    <div style={{ display: 'flex', gap: 2, marginTop: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                                        {['libre', 'ocupada', 'reservada'].filter(e => e !== m.estado).map(e => (
+                                                            <button key={e} className="btn btn-ghost"
+                                                                style={{ fontSize: 9, padding: '3px 6px', minHeight: 'auto' }}
+                                                                onClick={() => cambiarEstado(m.id, e)}>
+                                                                {e === 'libre' ? '✓' : e === 'ocupada' ? '👥' : '📅'}
+                                                            </button>
+                                                        ))}
+                                                        <button className="btn btn-ghost" style={{ fontSize: 9, padding: '3px 6px', minHeight: 'auto' }}
+                                                            onClick={() => { setForm({ ...EMPTY, ...m }); setEditId(m.id); setOpen(true); }}>
+                                                            <Pencil size={10} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
-                            );
-                        })}
-                    </div>
-                )}
+                            ))}
+                        </div>
+                    );
+                })()}
             </Card>
 
             <Modal open={open} onClose={() => setOpen(false)} title={editId ? 'Editar mesa' : 'Nueva mesa'}>
@@ -281,13 +366,33 @@ export function ReservasPage() {
 // Muestra comandas en tiempo real desde ventas con mesaId
 // Flujo: nueva → preparando → lista → entregada
 // ═══════════════════════════════════════════════════════════════════
-import { CookingPot, CheckCheck, Timer, Flame } from 'lucide-react';
+import { CookingPot, CheckCheck, Timer, Flame, Volume2, VolumeX, Printer } from 'lucide-react';
+import { TicketPrinter } from '../utils/printer';
+
+// WebAudio beep — sin archivos, generado on-the-fly
+function playBeep(frequency = 880, duration = 180) {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = frequency;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration / 1000);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration / 1000);
+        setTimeout(() => ctx.close(), duration + 100);
+    } catch { /* user hasn't interacted yet */ }
+}
 
 export function KDSPage() {
     const { state, actions } = useData();
-    const [tick, setTick] = useState(0); // Forzar re-render cada 30s para tiempos
+    const [tick, setTick] = useState(0);
+    const [soundOn, setSoundOn] = useState(() => localStorage.getItem('kds_sound') !== 'off');
+    const [lastComandaIds, setLastComandaIds] = useState(new Set());
 
-    // Re-render cada 30s para actualizar "hace 3min"
+    // Re-render cada 30s para actualizar 'hace 3min'
     React.useEffect(() => {
         const t = setInterval(() => setTick(n => n + 1), 30000);
         return () => clearInterval(t);
@@ -304,6 +409,35 @@ export function KDSPage() {
     const nuevas = comandasTodas.filter(v => !v.kdsEstado || v.kdsEstado === 'nueva');
     const preparando = comandasTodas.filter(v => v.kdsEstado === 'preparando');
     const listas = comandasTodas.filter(v => v.kdsEstado === 'lista');
+
+    // Sonido al llegar comanda nueva
+    React.useEffect(() => {
+        const newIds = new Set(nuevas.map(c => c.id));
+        const fresh = [...newIds].filter(id => !lastComandaIds.has(id));
+        if (fresh.length > 0 && lastComandaIds.size > 0 && soundOn) {
+            // 2 beeps rápidos
+            playBeep(880, 150);
+            setTimeout(() => playBeep(1100, 200), 180);
+        }
+        setLastComandaIds(newIds);
+    }, [nuevas.length]);
+
+    // Stats del día: promedio de tiempo en cocina
+    const statsCocina = React.useMemo(() => {
+        const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+        const entregadas = (state.ventas || [])
+            .filter(v => v.mesaId && v.kdsEstado === 'entregada' && new Date(v.fecha).getTime() >= hoy.getTime());
+        if (entregadas.length === 0) return { count: 0, avgMin: 0 };
+        const tiempos = entregadas
+            .map(v => {
+                if (!v.kdsUpdatedAt) return null;
+                return (new Date(v.kdsUpdatedAt).getTime() - new Date(v.fecha).getTime()) / 60000;
+            })
+            .filter(t => t !== null && t > 0 && t < 180); // filtra outliers > 3h
+        if (tiempos.length === 0) return { count: entregadas.length, avgMin: 0 };
+        const avg = tiempos.reduce((a, b) => a + b, 0) / tiempos.length;
+        return { count: entregadas.length, avgMin: Math.round(avg) };
+    }, [state.ventas, tick]);
 
     const mesaDe = (v) => {
         const m = state.mesas?.find(x => x.id === v.mesaId);
@@ -322,6 +456,32 @@ export function KDSPage() {
             kdsEstado: nuevoEstado,
             kdsUpdatedAt: new Date().toISOString()
         });
+    };
+
+    const printCocina = async (venta) => {
+        // Ticket de cocina: sin precios, solo items
+        try {
+            await TicketPrinter.quickPrint({
+                business: { name: `🍳 COCINA — ${mesaDe(venta)}` },
+                items: (venta.items || []).map(it => ({
+                    nombre: it.nombre + (it.variantLabel ? ` (${it.variantLabel})` : ''),
+                    cantidad: it.cantidad,
+                    precio: 0 // oculto
+                })),
+                total: 0,
+                fecha: new Date(venta.fecha),
+                numero: `COC-${String(venta.id).slice(-6)}`
+            });
+        } catch (err) {
+            alert('Error al imprimir: ' + err.message);
+        }
+    };
+
+    const toggleSound = () => {
+        const next = !soundOn;
+        setSoundOn(next);
+        localStorage.setItem('kds_sound', next ? 'on' : 'off');
+        if (next) playBeep(660, 120);
     };
 
     const ComandaCard = ({ venta, nextState, buttonLabel, buttonIcon: Icon, accent }) => {
@@ -397,19 +557,31 @@ export function KDSPage() {
                 </div>
 
                 {/* Action button */}
-                <button
-                    className="btn btn-primary btn-lg"
-                    style={{
-                        width: '100%',
-                        minHeight: 48,
-                        fontSize: 15,
-                        background: accent || 'var(--accent)',
-                        color: '#0a0a0f'
-                    }}
-                    onClick={() => updateEstado(venta.id, nextState)}
-                >
-                    <Icon size={18} /> {buttonLabel}
-                </button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                        className="btn"
+                        style={{
+                            flex: 1,
+                            minHeight: 48,
+                            fontSize: 15,
+                            background: accent || 'var(--accent)',
+                            color: '#0a0a0f'
+                        }}
+                        onClick={() => updateEstado(venta.id, nextState)}
+                    >
+                        <Icon size={18} /> {buttonLabel}
+                    </button>
+                    {nextState === 'preparando' && (
+                        <button
+                            className="btn btn-ghost btn-icon"
+                            style={{ minHeight: 48, width: 48 }}
+                            onClick={() => printCocina(venta)}
+                            title="Imprimir comanda de cocina"
+                        >
+                            <Printer size={18} />
+                        </button>
+                    )}
+                </div>
             </div>
         );
     };
@@ -419,7 +591,17 @@ export function KDSPage() {
             <PageHeader
                 icon={CookingPot}
                 title="KDS · Cocina en vivo"
-                subtitle={`${nuevas.length + preparando.length + listas.length} comandas activas · actualización automática`}
+                subtitle={`${nuevas.length + preparando.length + listas.length} comandas activas · ${statsCocina.count > 0 ? `⏱️ promedio cocina hoy: ${statsCocina.avgMin}min` : 'actualización automática'}`}
+                actions={
+                    <button
+                        className="btn btn-ghost"
+                        onClick={toggleSound}
+                        title={soundOn ? 'Desactivar sonido' : 'Activar sonido'}
+                    >
+                        {soundOn ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                        {soundOn ? ' Sonido ON' : ' Sonido OFF'}
+                    </button>
+                }
             />
 
             {comandasTodas.length === 0 ? (
