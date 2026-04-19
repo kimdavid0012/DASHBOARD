@@ -244,7 +244,7 @@ const RUBRO_CONFIG = {
             category: 'Categoría',
             orders: 'Pedidos online'
         },
-        hideSections: ['mesas', 'reservas'],
+        hideSections: ['mesas', 'reservas', 'kds'],
         defaultCategorias: ['General', 'Destacados', 'Promociones']
     },
     kiosco: {
@@ -258,7 +258,7 @@ const RUBRO_CONFIG = {
             category: 'Rubro',
             orders: 'Pedidos WhatsApp / Delivery'
         },
-        hideSections: ['mesas', 'reservas'],
+        hideSections: ['mesas', 'reservas', 'kds'],
         defaultCategorias: ['Golosinas', 'Cigarrillos', 'Bebidas', 'Galletitas', 'Lácteos', 'Fiambres', 'Panificados', 'Limpieza', 'Almacén', 'Revistas']
     },
     restaurante: {
@@ -286,7 +286,7 @@ const RUBRO_CONFIG = {
             category: 'Categoría',
             orders: 'Pedidos Instagram / Tienda'
         },
-        hideSections: ['mesas', 'reservas'],
+        hideSections: ['mesas', 'reservas', 'kds'],
         defaultCategorias: ['Aros', 'Collares', 'Pulseras', 'Anillos', 'Bolsos', 'Carteras', 'Cinturones', 'Bijouterie', 'Ropa', 'Calzado']
     },
     servicios: {
@@ -300,7 +300,7 @@ const RUBRO_CONFIG = {
             category: 'Tipo de servicio',
             orders: 'Reservas online'
         },
-        hideSections: ['mesas'],
+        hideSections: ['mesas', 'kds'],
         defaultCategorias: ['Consultoría', 'Clases', 'Sesiones', 'Asesoría', 'Mantenimiento']
     },
     otro: {
@@ -314,7 +314,7 @@ const RUBRO_CONFIG = {
             category: 'Categoría',
             orders: 'Pedidos'
         },
-        hideSections: ['mesas', 'reservas'],
+        hideSections: ['mesas', 'reservas', 'kds'],
         defaultCategorias: ['General']
     }
 };

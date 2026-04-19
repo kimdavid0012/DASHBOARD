@@ -44,12 +44,28 @@ export default function ProductosPage() {
 
     const save = () => {
         if (!form.nombre.trim()) return alert('Nombre es obligatorio');
+
+        // Normalize variants and compute total stock
+        const variantes = (form.variantes || []).map(v => ({
+            ...v,
+            stock: Number(v.stock || 0),
+            precioDelta: Number(v.precioDelta || 0),
+            talle: (v.talle || '').trim(),
+            color: (v.color || '').trim(),
+            sku: (v.sku || '').trim()
+        })).filter(v => v.talle || v.color || v.sku);
+
+        const stockFromVariantes = variantes.reduce((sum, v) => sum + v.stock, 0);
+        const finalStock = variantes.length > 0 ? stockFromVariantes : Number(form.stock || 0);
+
         const patch = {
             ...form,
             precioVenta: Number(form.precioVenta || 0),
             precioCosto: Number(form.precioCosto || 0),
-            stock: Number(form.stock || 0),
-            stockMinimo: Number(form.stockMinimo || 0)
+            stock: finalStock,
+            stockMinimo: Number(form.stockMinimo || 0),
+            variantes: variantes.length > 0 ? variantes : null,
+            _showVariantes: undefined // no persistir flag de UI
         };
         if (editId) actions.update('productos', editId, patch);
         else actions.add('productos', patch);
@@ -188,6 +204,10 @@ export default function ProductosPage() {
                     )}
                 </div>
                 <div className="mt-3"><Field label="Descripción"><textarea className="textarea" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></Field></div>
+
+                {/* ═══ VARIANTES REALES (stock separado por talle/color) ═══ */}
+                <VariantesEditor form={form} setForm={setForm} labels={labels} />
+
                 {form.precioCosto && form.precioVenta && (
                     <InfoBox variant="success">
                         <strong>Margen:</strong> {(((Number(form.precioVenta) - Number(form.precioCosto)) / Number(form.precioCosto)) * 100).toFixed(0)}% · <strong>Ganancia por unidad:</strong> {fmtMoney(Number(form.precioVenta) - Number(form.precioCosto), state.business.moneda)}
@@ -198,6 +218,191 @@ export default function ProductosPage() {
                     <button className="btn btn-primary" onClick={save}>{editId ? 'Guardar' : 'Crear'}</button>
                 </div>
             </Modal>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VARIANTES EDITOR - stock separado por talle/color/SKU real
+// ═══════════════════════════════════════════════════════════════════
+function VariantesEditor({ form, setForm, labels }) {
+    const variantes = form.variantes || [];
+
+    const addVariante = () => {
+        const newVar = {
+            id: crypto.randomUUID ? crypto.randomUUID() : `v_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            talle: '',
+            color: '',
+            sku: '',
+            stock: 0,
+            precioDelta: 0
+        };
+        setForm({ ...form, variantes: [...variantes, newVar] });
+    };
+
+    const updateVariante = (id, patch) => {
+        setForm({
+            ...form,
+            variantes: variantes.map(v => v.id === id ? { ...v, ...patch } : v)
+        });
+    };
+
+    const removeVariante = (id) => {
+        setForm({
+            ...form,
+            variantes: variantes.filter(v => v.id !== id)
+        });
+    };
+
+    // Auto-generate variantes from talles × colores strings
+    const generateFromStrings = () => {
+        const talles = (form.talles || '').split(',').map(s => s.trim()).filter(Boolean);
+        const colores = (form.colores || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (talles.length === 0 && colores.length === 0) return;
+
+        const combos = [];
+        if (talles.length && colores.length) {
+            for (const t of talles) for (const c of colores) combos.push({ talle: t, color: c });
+        } else if (talles.length) {
+            for (const t of talles) combos.push({ talle: t, color: '' });
+        } else {
+            for (const c of colores) combos.push({ talle: '', color: c });
+        }
+
+        const existing = new Set(variantes.map(v => `${v.talle}|${v.color}`));
+        const newOnes = combos
+            .filter(c => !existing.has(`${c.talle}|${c.color}`))
+            .map(c => ({
+                id: crypto.randomUUID ? crypto.randomUUID() : `v_${Date.now()}_${Math.random()}`,
+                talle: c.talle,
+                color: c.color,
+                sku: '',
+                stock: 0,
+                precioDelta: 0
+            }));
+
+        if (newOnes.length === 0) {
+            alert(`Todas las combinaciones ya existen (${combos.length} combinaciones, ${existing.size} ya cargadas).`);
+            return;
+        }
+        setForm({ ...form, variantes: [...variantes, ...newOnes] });
+    };
+
+    const totalStock = variantes.reduce((sum, v) => sum + Number(v.stock || 0), 0);
+
+    if (!form._showVariantes && variantes.length === 0) {
+        return (
+            <div style={{
+                marginTop: 16,
+                padding: 12,
+                border: '1px dashed var(--border-color)',
+                borderRadius: 10,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                justifyContent: 'space-between'
+            }}>
+                <div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>🎨 Variantes (talles / colores / SKUs)</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        Activá si este producto tiene stock distinto por talle o color.
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setForm({ ...form, _showVariantes: true })}
+                >
+                    + Agregar variantes
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <div style={{
+            marginTop: 16,
+            padding: 14,
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-accent)',
+            borderRadius: 12
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                        🎨 Variantes ({variantes.length})
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        Stock total: <strong>{totalStock}</strong> · Al vender se descuenta de la variante elegida
+                    </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {(form.talles || form.colores) && (
+                        <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={generateFromStrings}
+                            title="Generar todas las combinaciones de talles × colores"
+                        >
+                            ⚡ Generar combinaciones
+                        </button>
+                    )}
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={addVariante}>
+                        + Agregar
+                    </button>
+                </div>
+            </div>
+
+            {variantes.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 20, fontSize: 13, color: 'var(--text-muted)' }}>
+                    Sin variantes. Agregá una o usá "⚡ Generar combinaciones" si cargaste talles/colores arriba.
+                </div>
+            ) : (
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: 11 }}>
+                                <th style={{ padding: '6px 4px' }}>Talle</th>
+                                <th style={{ padding: '6px 4px' }}>Color</th>
+                                <th style={{ padding: '6px 4px' }}>SKU</th>
+                                <th style={{ padding: '6px 4px', width: 80 }}>Stock</th>
+                                <th style={{ padding: '6px 4px', width: 90 }}>± Precio</th>
+                                <th style={{ width: 40 }}></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {variantes.map(v => (
+                                <tr key={v.id} style={{ borderTop: '1px solid var(--border-color)' }}>
+                                    <td style={{ padding: '4px' }}>
+                                        <input className="input" style={{ padding: 6, fontSize: 13 }} value={v.talle} onChange={e => updateVariante(v.id, { talle: e.target.value })} placeholder="S, M, 38..." />
+                                    </td>
+                                    <td style={{ padding: '4px' }}>
+                                        <input className="input" style={{ padding: 6, fontSize: 13 }} value={v.color} onChange={e => updateVariante(v.id, { color: e.target.value })} placeholder="Negro, Rojo..." />
+                                    </td>
+                                    <td style={{ padding: '4px' }}>
+                                        <input className="input" style={{ padding: 6, fontSize: 13 }} value={v.sku} onChange={e => updateVariante(v.id, { sku: e.target.value })} placeholder="auto" />
+                                    </td>
+                                    <td style={{ padding: '4px' }}>
+                                        <input className="input" type="number" min="0" style={{ padding: 6, fontSize: 13 }} value={v.stock} onChange={e => updateVariante(v.id, { stock: e.target.value })} />
+                                    </td>
+                                    <td style={{ padding: '4px' }}>
+                                        <input className="input" type="number" style={{ padding: 6, fontSize: 13 }} value={v.precioDelta || 0} onChange={e => updateVariante(v.id, { precioDelta: e.target.value })} title="Suma o resta del precio base de esta variante" placeholder="0" />
+                                    </td>
+                                    <td style={{ padding: '4px' }}>
+                                        <button type="button" onClick={() => removeVariante(v.id)} className="btn btn-ghost btn-icon btn-sm" title="Eliminar variante">
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10, lineHeight: 1.5 }}>
+                <strong>💡 Tip:</strong> Si llenás "Talles" y "Colores" arriba y tocás "⚡ Generar combinaciones", creamos automáticamente todas las variantes vacías para que solo cargues el stock de cada una. El campo "± Precio" permite ajustar el precio por variante (ej: talle XXL +500).
+            </div>
         </div>
     );
 }

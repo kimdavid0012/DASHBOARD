@@ -295,7 +295,19 @@ function usePOSLogic() {
 
         cart.forEach(c => {
             const p = productos.find(x => x.id === c.productoId);
-            if (p && p.stock !== undefined) {
+            if (!p) return;
+
+            // Si el item del cart apunta a una variante específica, descontamos de la variante
+            if (c.varianteId && Array.isArray(p.variantes)) {
+                const newVariantes = p.variantes.map(v => {
+                    if (v.id !== c.varianteId) return v;
+                    return { ...v, stock: Math.max(0, Number(v.stock || 0) - c.cantidad) };
+                });
+                // El stock base del producto = suma de variantes
+                const newTotal = newVariantes.reduce((sum, v) => sum + Number(v.stock || 0), 0);
+                actions.update('productos', p.id, { variantes: newVariantes, stock: newTotal });
+            } else if (p.stock !== undefined) {
+                // Producto sin variantes: comportamiento original
                 actions.update('productos', p.id, { stock: Math.max(0, Number(p.stock || 0) - c.cantidad) });
             }
         });
@@ -637,7 +649,10 @@ function POSAccesorios() {
     }), [productos, categoria, search]);
 
     const handleProductClick = (p) => {
-        if ((p.talles || '').trim() || (p.colores || '').trim()) {
+        // Usa variantes reales si están, si no las strings viejas como fallback
+        const hasRealVariantes = Array.isArray(p.variantes) && p.variantes.length > 0;
+        const hasStringVariantes = (p.talles || '').trim() || (p.colores || '').trim();
+        if (hasRealVariantes || hasStringVariantes) {
             setVariantProduct(p);
             setSelectedTalle('');
             setSelectedColor('');
@@ -648,8 +663,48 @@ function POSAccesorios() {
 
     const addWithVariant = () => {
         if (!variantProduct) return;
-        const variante = [selectedTalle, selectedColor].filter(Boolean).join(' / ');
-        addToCart(variantProduct, { variante: variante || null });
+        const hasRealVariantes = Array.isArray(variantProduct.variantes) && variantProduct.variantes.length > 0;
+
+        if (hasRealVariantes) {
+            // Busca la variante específica
+            const variante = variantProduct.variantes.find(v =>
+                (v.talle || '') === selectedTalle && (v.color || '') === selectedColor
+            );
+            if (!variante) {
+                alert('Esa combinación no existe. Elegí una disponible.');
+                return;
+            }
+            if (Number(variante.stock || 0) <= 0) {
+                alert(`Sin stock de ${[selectedTalle, selectedColor].filter(Boolean).join(' / ')}`);
+                return;
+            }
+            const label = [selectedTalle, selectedColor].filter(Boolean).join(' / ');
+            const finalPrice = Number(variantProduct.precioVenta || 0) + Number(variante.precioDelta || 0);
+            // Custom add for real variants
+            const varianteKey = `${variantProduct.id}_v${variante.id}`;
+            const exist = cart.find(c => c._key === varianteKey);
+            if (exist) {
+                if (exist.cantidad + 1 > Number(variante.stock || 0)) {
+                    alert(`Solo quedan ${variante.stock} de ${label}`);
+                    return;
+                }
+                setCart(cart.map(c => c._key === varianteKey ? { ...c, cantidad: c.cantidad + 1 } : c));
+            } else {
+                setCart([...cart, {
+                    _key: varianteKey,
+                    productoId: variantProduct.id,
+                    varianteId: variante.id,
+                    nombre: variantProduct.nombre,
+                    variantLabel: label,
+                    precio: finalPrice,
+                    cantidad: 1
+                }]);
+            }
+        } else {
+            // Fallback al sistema viejo
+            const variante = [selectedTalle, selectedColor].filter(Boolean).join(' / ');
+            addToCart(variantProduct, { variante: variante || null, variantLabel: variante || null });
+        }
         setVariantProduct(null);
     };
 
@@ -720,54 +775,124 @@ function POSAccesorios() {
 
             {/* Variant picker modal */}
             <Modal open={!!variantProduct} onClose={() => setVariantProduct(null)} title={variantProduct?.nombre || ''} size="sm">
-                {variantProduct && (
-                    <div>
-                        <div style={{ fontSize: 32, textAlign: 'center', marginBottom: 12 }}>
-                            {PRODUCT_EMOJI_BY_CATEGORIA[variantProduct.categoria] || '✨'}
-                        </div>
+                {variantProduct && (() => {
+                    const hasRealVariantes = Array.isArray(variantProduct.variantes) && variantProduct.variantes.length > 0;
 
-                        {(variantProduct.talles || '').trim() && (
-                            <div className="mb-4">
-                                <div className="field-label mb-2">Talle</div>
-                                <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-                                    {variantProduct.talles.split(',').map(t => t.trim()).filter(Boolean).map(t => (
-                                        <button
-                                            key={t}
-                                            className={`pos-category ${selectedTalle === t ? 'active' : ''}`}
-                                            onClick={() => setSelectedTalle(t)}
-                                        >
-                                            {t}
-                                        </button>
-                                    ))}
-                                </div>
+                    // Real variants: extract unique talles + colores from the list
+                    const talles = hasRealVariantes
+                        ? [...new Set(variantProduct.variantes.map(v => v.talle).filter(Boolean))]
+                        : (variantProduct.talles || '').split(',').map(s => s.trim()).filter(Boolean);
+                    const colores = hasRealVariantes
+                        ? [...new Set(variantProduct.variantes.map(v => v.color).filter(Boolean))]
+                        : (variantProduct.colores || '').split(',').map(s => s.trim()).filter(Boolean);
+
+                    // Helper: how much stock for current combo (real variants only)
+                    const stockFor = (talle, color) => {
+                        if (!hasRealVariantes) return null;
+                        const v = variantProduct.variantes.find(x =>
+                            (x.talle || '') === talle && (x.color || '') === color
+                        );
+                        return v ? Number(v.stock || 0) : 0;
+                    };
+
+                    // Check if a specific talle/color has any stock
+                    const talleHasStock = (t) => {
+                        if (!hasRealVariantes) return true;
+                        return variantProduct.variantes.some(v => v.talle === t && Number(v.stock || 0) > 0);
+                    };
+                    const colorHasStock = (c) => {
+                        if (!hasRealVariantes) return true;
+                        return variantProduct.variantes.some(v => v.color === c && Number(v.stock || 0) > 0 &&
+                            (!selectedTalle || v.talle === selectedTalle));
+                    };
+
+                    const currentStock = hasRealVariantes && selectedTalle !== null && selectedColor !== null
+                        ? stockFor(selectedTalle, selectedColor)
+                        : null;
+
+                    const canAdd = hasRealVariantes
+                        ? (currentStock !== null && currentStock > 0)
+                        : (talles.length === 0 || selectedTalle) && (colores.length === 0 || selectedColor);
+
+                    return (
+                        <div>
+                            <div style={{ fontSize: 32, textAlign: 'center', marginBottom: 4 }}>
+                                {PRODUCT_EMOJI_BY_CATEGORIA[variantProduct.categoria] || '✨'}
                             </div>
-                        )}
-
-                        {(variantProduct.colores || '').trim() && (
-                            <div className="mb-4">
-                                <div className="field-label mb-2">Color</div>
-                                <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-                                    {variantProduct.colores.split(',').map(t => t.trim()).filter(Boolean).map(c => (
-                                        <button
-                                            key={c}
-                                            className={`pos-category ${selectedColor === c ? 'active' : ''}`}
-                                            onClick={() => setSelectedColor(c)}
-                                        >
-                                            {c}
-                                        </button>
-                                    ))}
-                                </div>
+                            <div style={{ textAlign: 'center', marginBottom: 16, fontSize: 14, color: 'var(--text-muted)' }}>
+                                Base: {fmtMoney(Number(variantProduct.precioVenta || 0), state.business.moneda)}
                             </div>
-                        )}
 
-                        <div className="flex gap-2 mt-4 justify-end">
-                            <button className="btn btn-ghost" onClick={() => setVariantProduct(null)}>Cancelar</button>
-                            <button className="btn btn-primary btn-lg" onClick={addWithVariant}>
-                                <Plus size={16} /> Agregar al ticket
-                            </button>
+                            {talles.length > 0 && (
+                                <div className="mb-4">
+                                    <div className="field-label mb-2">Talle</div>
+                                    <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+                                        {talles.map(t => {
+                                            const hasStock = talleHasStock(t);
+                                            return (
+                                                <button
+                                                    key={t}
+                                                    className={`pos-category ${selectedTalle === t ? 'active' : ''}`}
+                                                    onClick={() => setSelectedTalle(t)}
+                                                    disabled={!hasStock}
+                                                    style={!hasStock ? { opacity: 0.4, textDecoration: 'line-through' } : {}}
+                                                    title={!hasStock ? 'Sin stock' : ''}
+                                                >
+                                                    {t}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {colores.length > 0 && (
+                                <div className="mb-4">
+                                    <div className="field-label mb-2">Color</div>
+                                    <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+                                        {colores.map(c => {
+                                            const hasStock = colorHasStock(c);
+                                            return (
+                                                <button
+                                                    key={c}
+                                                    className={`pos-category ${selectedColor === c ? 'active' : ''}`}
+                                                    onClick={() => setSelectedColor(c)}
+                                                    disabled={!hasStock}
+                                                    style={!hasStock ? { opacity: 0.4, textDecoration: 'line-through' } : {}}
+                                                    title={!hasStock ? 'Sin stock para ese talle' : ''}
+                                                >
+                                                    {c}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {hasRealVariantes && currentStock !== null && selectedTalle !== '' && selectedColor !== '' && (
+                                <div style={{
+                                    padding: 10,
+                                    background: currentStock > 0 ? 'var(--accent-soft)' : 'rgba(251, 113, 133, 0.1)',
+                                    border: `1px solid ${currentStock > 0 ? 'var(--border-accent)' : 'rgba(251, 113, 133, 0.3)'}`,
+                                    borderRadius: 8,
+                                    fontSize: 13,
+                                    marginBottom: 12
+                                }}>
+                                    {currentStock > 0
+                                        ? `✓ Stock disponible: ${currentStock}`
+                                        : '✗ Sin stock de esta combinación'}
+                                </div>
+                            )}
+
+                            <div className="flex gap-2 mt-4 justify-end">
+                                <button className="btn btn-ghost" onClick={() => setVariantProduct(null)}>Cancelar</button>
+                                <button className="btn btn-primary btn-lg" onClick={addWithVariant} disabled={!canAdd}>
+                                    <Plus size={16} /> Agregar al ticket
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })()}
             </Modal>
 
             <CheckoutModal open={checkoutOpen} onClose={() => setCheckoutOpen(false)} cart={cart} state={state} onConfirm={confirmSale} />

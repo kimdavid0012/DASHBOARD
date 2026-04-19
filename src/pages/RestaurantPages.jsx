@@ -275,3 +275,266 @@ export function ReservasPage() {
         </div>
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// KDS — Kitchen Display System
+// Muestra comandas en tiempo real desde ventas con mesaId
+// Flujo: nueva → preparando → lista → entregada
+// ═══════════════════════════════════════════════════════════════════
+import { CookingPot, CheckCheck, Timer, Flame } from 'lucide-react';
+
+export function KDSPage() {
+    const { state, actions } = useData();
+    const [tick, setTick] = useState(0); // Forzar re-render cada 30s para tiempos
+
+    // Re-render cada 30s para actualizar "hace 3min"
+    React.useEffect(() => {
+        const t = setInterval(() => setTick(n => n + 1), 30000);
+        return () => clearInterval(t);
+    }, []);
+
+    // Todas las ventas (comandas) que tengan mesaId asignado
+    // Filtradas a las últimas 12hs para no saturar la pantalla
+    const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
+    const comandasTodas = (state.ventas || [])
+        .filter(v => v.mesaId && new Date(v.fecha).getTime() > twelveHoursAgo)
+        .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+
+    // Agrupar por estado (default nueva si no tiene kdsEstado)
+    const nuevas = comandasTodas.filter(v => !v.kdsEstado || v.kdsEstado === 'nueva');
+    const preparando = comandasTodas.filter(v => v.kdsEstado === 'preparando');
+    const listas = comandasTodas.filter(v => v.kdsEstado === 'lista');
+
+    const mesaDe = (v) => {
+        const m = state.mesas?.find(x => x.id === v.mesaId);
+        return m ? (m.nombre || `#${m.numero}`) : '?';
+    };
+
+    const minutesAgo = (iso) => {
+        const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+        if (mins < 1) return 'ahora';
+        if (mins < 60) return `${mins}min`;
+        return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+    };
+
+    const updateEstado = (ventaId, nuevoEstado) => {
+        actions.update('ventas', ventaId, {
+            kdsEstado: nuevoEstado,
+            kdsUpdatedAt: new Date().toISOString()
+        });
+    };
+
+    const ComandaCard = ({ venta, nextState, buttonLabel, buttonIcon: Icon, accent }) => {
+        const ageMin = Math.floor((Date.now() - new Date(venta.fecha).getTime()) / 60000);
+        const isUrgent = ageMin > 15; // Más de 15 min = urgente
+
+        return (
+            <div style={{
+                background: isUrgent ? 'rgba(251, 113, 133, 0.08)' : 'var(--bg-card)',
+                border: `2px solid ${isUrgent ? 'rgba(251, 113, 133, 0.5)' : 'var(--border-color)'}`,
+                borderRadius: 14,
+                padding: 14,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+                position: 'relative'
+            }}>
+                {isUrgent && (
+                    <div style={{
+                        position: 'absolute', top: -8, right: -8,
+                        background: 'var(--danger, #fb7185)',
+                        color: 'white', fontSize: 10, fontWeight: 700,
+                        padding: '3px 8px', borderRadius: 12,
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+                    }}>
+                        🔥 URGENTE
+                    </div>
+                )}
+
+                {/* Header: Mesa + tiempo */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{
+                        fontFamily: 'var(--font-display)',
+                        fontSize: 22,
+                        fontWeight: 700,
+                        color: 'var(--accent)'
+                    }}>
+                        🪑 {mesaDe(venta)}
+                    </div>
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 4,
+                        fontSize: 13,
+                        color: isUrgent ? 'var(--danger, #fb7185)' : 'var(--text-muted)',
+                        fontWeight: 600
+                    }}>
+                        <Timer size={13} /> {minutesAgo(venta.fecha)}
+                    </div>
+                </div>
+
+                {/* Items */}
+                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: 10 }}>
+                    {(venta.items || []).map((it, i) => (
+                        <div key={i} style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            padding: '4px 0',
+                            fontSize: 15,
+                            lineHeight: 1.4
+                        }}>
+                            <span style={{ flex: 1 }}>
+                                <strong style={{ color: 'var(--accent)', marginRight: 6 }}>
+                                    {it.cantidad}×
+                                </strong>
+                                {it.nombre}
+                                {it.variantLabel && (
+                                    <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 6 }}>
+                                        ({it.variantLabel})
+                                    </span>
+                                )}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Action button */}
+                <button
+                    className="btn btn-primary btn-lg"
+                    style={{
+                        width: '100%',
+                        minHeight: 48,
+                        fontSize: 15,
+                        background: accent || 'var(--accent)',
+                        color: '#0a0a0f'
+                    }}
+                    onClick={() => updateEstado(venta.id, nextState)}
+                >
+                    <Icon size={18} /> {buttonLabel}
+                </button>
+            </div>
+        );
+    };
+
+    return (
+        <div>
+            <PageHeader
+                icon={CookingPot}
+                title="KDS · Cocina en vivo"
+                subtitle={`${nuevas.length + preparando.length + listas.length} comandas activas · actualización automática`}
+            />
+
+            {comandasTodas.length === 0 ? (
+                <EmptyState
+                    icon={CookingPot}
+                    title="Cocina libre 🍳"
+                    description="Cuando llegue una comanda desde el POS va a aparecer acá en vivo. Dejá esta pantalla abierta en un tablet en la cocina."
+                />
+            ) : (
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: 16,
+                    marginTop: 4
+                }} className="kds-grid">
+                    {/* Columna 1: Nuevas */}
+                    <div>
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            padding: '10px 14px',
+                            background: 'rgba(99, 241, 203, 0.1)',
+                            border: '1px solid var(--border-accent)',
+                            borderRadius: 10,
+                            marginBottom: 12,
+                            fontFamily: 'var(--font-display)',
+                            fontWeight: 700
+                        }}>
+                            📋 Nuevas ({nuevas.length})
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {nuevas.length === 0 && (
+                                <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20, textAlign: 'center' }}>
+                                    Nada nuevo
+                                </div>
+                            )}
+                            {nuevas.map(v => (
+                                <ComandaCard
+                                    key={v.id}
+                                    venta={v}
+                                    nextState="preparando"
+                                    buttonLabel="Empezar a preparar"
+                                    buttonIcon={Flame}
+                                    accent="#fbbf24"
+                                />
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Columna 2: Preparando */}
+                    <div>
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            padding: '10px 14px',
+                            background: 'rgba(251, 191, 36, 0.1)',
+                            border: '1px solid rgba(251, 191, 36, 0.4)',
+                            borderRadius: 10,
+                            marginBottom: 12,
+                            fontFamily: 'var(--font-display)',
+                            fontWeight: 700
+                        }}>
+                            🍳 Preparando ({preparando.length})
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {preparando.length === 0 && (
+                                <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20, textAlign: 'center' }}>
+                                    Cocina libre
+                                </div>
+                            )}
+                            {preparando.map(v => (
+                                <ComandaCard
+                                    key={v.id}
+                                    venta={v}
+                                    nextState="lista"
+                                    buttonLabel="Marcar lista"
+                                    buttonIcon={CheckCircle}
+                                    accent="#60a5fa"
+                                />
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Columna 3: Listas */}
+                    <div>
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            padding: '10px 14px',
+                            background: 'rgba(96, 165, 250, 0.1)',
+                            border: '1px solid rgba(96, 165, 250, 0.4)',
+                            borderRadius: 10,
+                            marginBottom: 12,
+                            fontFamily: 'var(--font-display)',
+                            fontWeight: 700
+                        }}>
+                            ✅ Listas para servir ({listas.length})
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {listas.length === 0 && (
+                                <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20, textAlign: 'center' }}>
+                                    Sin pedidos esperando
+                                </div>
+                            )}
+                            {listas.map(v => (
+                                <ComandaCard
+                                    key={v.id}
+                                    venta={v}
+                                    nextState="entregada"
+                                    buttonLabel="Entregada"
+                                    buttonIcon={CheckCheck}
+                                    accent="#4ade80"
+                                />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

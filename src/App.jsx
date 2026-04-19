@@ -6,7 +6,7 @@ import {
     Instagram, Music2, Globe, Settings as SettingsIcon,
     Armchair, CalendarClock, RotateCcw, FileText, Upload, Shield,
     CheckCircle2, AlertCircle, RefreshCw, Cloud, CloudOff, User,
-    Menu, X as XIcon
+    Menu, X as XIcon, ChefHat
 } from 'lucide-react';
 import { DataProvider, useData, getRubroConfig, shouldShowSection } from './store/DataContext';
 import { AuthProvider, useAuth } from './store/AuthContext';
@@ -27,7 +27,7 @@ import BackupPage from './pages/BackupPage';
 import AccountPage from './pages/AccountPage';
 import { ClientesPage, GastosPage, CajaDiariaPage, TransferenciasPage, AsistenciaPage, PedidosPage } from './pages/CrudPages';
 import { MarketingPage, AgentsPage, InstagramPage, TikTokPage, AnalyticsPage, WebPage, BankingPage, TareasPage } from './pages/StubPages';
-import { MesasPage, ReservasPage } from './pages/RestaurantPages';
+import { MesasPage, ReservasPage, KDSPage } from './pages/RestaurantPages';
 import OnboardingModal from './components/OnboardingModal';
 import CelaBot from './components/CelaBot';
 
@@ -202,7 +202,8 @@ function AppContent() {
             label: state.business.rubro === 'restaurante' ? t('nav.salon') : t('nav.agenda'),
             items: [
                 { id: 'mesas', icon: Armchair, label: state.business.rubro === 'restaurante' ? t('nav.mesas') : t('nav.espacios') },
-                { id: 'reservas', icon: CalendarClock, label: t('nav.reservas') }
+                { id: 'reservas', icon: CalendarClock, label: t('nav.reservas') },
+                { id: 'kds', icon: ChefHat, label: 'KDS · Cocina', highlight: state.business.rubro === 'restaurante' }
             ]
         },
         {
@@ -267,6 +268,7 @@ function AppContent() {
             case 'tareas': return <TareasPage />;
             case 'mesas': return <MesasPage />;
             case 'reservas': return <ReservasPage />;
+            case 'kds': return <KDSPage />;
             case 'productos': return <ProductosPage />;
             case 'pos': return <POSPage />;
             case 'ventas': return <VentasPage onNavigate={setPage} />;
