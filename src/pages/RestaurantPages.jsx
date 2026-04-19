@@ -15,6 +15,7 @@ export function MesasPage() {
     const [editId, setEditId] = useState(null);
     const EMPTY = { numero: '', capacidad: 4, ubicacion: 'Salón', estado: 'libre', sucursalId: '', notas: '' };
     const [form, setForm] = useState(EMPTY);
+    const [viewMode, setViewMode] = useState(() => localStorage.getItem('mesas_view') || 'grid'); // grid | layout
 
     const save = () => {
         if (!form.numero) return alert('Número de mesa obligatorio');
@@ -35,9 +36,43 @@ export function MesasPage() {
                 subtitle="Gestión de mesas del salón"
                 help={SECTION_HELP.mesas}
                 actions={
-                    <button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}>
-                        <Plus size={14} /> Nueva mesa
-                    </button>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', background: 'var(--bg-elevated)', borderRadius: 8, padding: 2 }}>
+                            <button
+                                onClick={() => { setViewMode('grid'); localStorage.setItem('mesas_view', 'grid'); }}
+                                style={{
+                                    padding: '6px 12px',
+                                    background: viewMode === 'grid' ? 'var(--accent-soft)' : 'transparent',
+                                    color: viewMode === 'grid' ? 'var(--accent)' : 'var(--text-muted)',
+                                    border: 'none',
+                                    borderRadius: 6,
+                                    cursor: 'pointer',
+                                    fontSize: 12,
+                                    fontWeight: 600
+                                }}
+                            >
+                                📋 Grid
+                            </button>
+                            <button
+                                onClick={() => { setViewMode('layout'); localStorage.setItem('mesas_view', 'layout'); }}
+                                style={{
+                                    padding: '6px 12px',
+                                    background: viewMode === 'layout' ? 'var(--accent-soft)' : 'transparent',
+                                    color: viewMode === 'layout' ? 'var(--accent)' : 'var(--text-muted)',
+                                    border: 'none',
+                                    borderRadius: 6,
+                                    cursor: 'pointer',
+                                    fontSize: 12,
+                                    fontWeight: 600
+                                }}
+                            >
+                                🗺️ Salón
+                            </button>
+                        </div>
+                        <button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}>
+                            <Plus size={14} /> Nueva mesa
+                        </button>
+                    </div>
                 }
             />
 
@@ -62,6 +97,17 @@ export function MesasPage() {
                             'Al hacer comandas podés asignarle la mesa'
                         ]}
                         example="Salón principal: mesas 1-15 (4 pax), mesas 16-20 (6 pax). Terraza: mesas 21-28. Barra: 6 banquetas."
+                    />
+                ) : viewMode === 'layout' ? (
+                    <SalonLayout
+                        mesas={mesas}
+                        state={state}
+                        actions={actions}
+                        cambiarEstado={cambiarEstado}
+                        setForm={setForm}
+                        setEditId={setEditId}
+                        setOpen={setOpen}
+                        EMPTY={EMPTY}
                     />
                 ) : (() => {
                     // Agrupar por ubicación
@@ -730,6 +776,254 @@ export function KDSPage() {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SALON LAYOUT — canvas visual con drag-and-drop de mesas
+// Cada mesa guarda x,y en el producto. Se puede arrastrar para posicionar.
+// Dueño guarda el layout del local y el mozo ve estado en vivo.
+// ═══════════════════════════════════════════════════════════════════
+function SalonLayout({ mesas, state, actions, cambiarEstado, setForm, setEditId, setOpen, EMPTY }) {
+    const canvasRef = React.useRef(null);
+    const [draggingId, setDraggingId] = React.useState(null);
+    const [dragOffset, setDragOffset] = React.useState({ x: 0, y: 0 });
+    const [editMode, setEditMode] = React.useState(false);
+    const [zoom, setZoom] = React.useState(1);
+
+    // Comanda activa por mesa (para mostrar tiempo)
+    const comandaDe = (mesaId) => {
+        const cutoff = Date.now() - 8 * 60 * 60 * 1000;
+        return (state.ventas || []).find(v =>
+            v.mesaId === mesaId &&
+            v.kdsEstado !== 'entregada' &&
+            new Date(v.fecha).getTime() > cutoff
+        );
+    };
+
+    // Pointer handlers — mouse + touch
+    const onPointerDown = (e, mesa) => {
+        if (!editMode) return;
+        e.preventDefault();
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / zoom;
+        const y = (e.clientY - rect.top) / zoom;
+        setDraggingId(mesa.id);
+        setDragOffset({
+            x: x - (mesa.x || 50),
+            y: y - (mesa.y || 50)
+        });
+    };
+
+    const onPointerMove = (e) => {
+        if (!draggingId) return;
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const x = Math.max(0, Math.min((e.clientX - rect.left) / zoom - dragOffset.x, rect.width / zoom - 80));
+        const y = Math.max(0, Math.min((e.clientY - rect.top) / zoom - dragOffset.y, rect.height / zoom - 80));
+        // Optimistic update solo en memoria mientras arrastramos
+        actions.update('mesas', draggingId, { x, y });
+    };
+
+    const onPointerUp = () => {
+        setDraggingId(null);
+    };
+
+    // Auto-organizar las mesas sin posición en grid
+    React.useEffect(() => {
+        let changed = false;
+        const patches = [];
+        mesas.forEach((m, i) => {
+            if (m.x === undefined || m.y === undefined) {
+                const col = i % 5;
+                const row = Math.floor(i / 5);
+                patches.push({ id: m.id, x: 40 + col * 110, y: 40 + row * 110 });
+                changed = true;
+            }
+        });
+        if (changed) {
+            patches.forEach(p => actions.update('mesas', p.id, { x: p.x, y: p.y }));
+        }
+    }, [mesas.length]);
+
+    return (
+        <div>
+            {/* Toolbar */}
+            <div style={{
+                display: 'flex',
+                gap: 10,
+                marginBottom: 12,
+                padding: 10,
+                background: 'var(--bg-elevated)',
+                borderRadius: 10,
+                alignItems: 'center',
+                flexWrap: 'wrap'
+            }}>
+                <button
+                    className={editMode ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+                    onClick={() => setEditMode(!editMode)}
+                >
+                    {editMode ? '✓ Modo edición (arrastrá mesas)' : '✏️ Editar layout'}
+                </button>
+
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}>−</button>
+                    <span style={{ fontSize: 12, minWidth: 40, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setZoom(Math.min(1.5, zoom + 0.1))}>+</button>
+                </div>
+
+                <div style={{ flex: 1, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>
+                    {editMode
+                        ? '💡 Arrastrá las mesas para posicionarlas. El layout se guarda automáticamente.'
+                        : '👁️ Vista salón — activá "Editar" para mover las mesas.'}
+                </div>
+            </div>
+
+            {/* Canvas */}
+            <div
+                ref={canvasRef}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerLeave={onPointerUp}
+                style={{
+                    position: 'relative',
+                    width: '100%',
+                    height: 560,
+                    background: `
+                        repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(99,241,203,0.05) 39px, rgba(99,241,203,0.05) 40px),
+                        repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(99,241,203,0.05) 39px, rgba(99,241,203,0.05) 40px),
+                        var(--bg-app)
+                    `,
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 12,
+                    overflow: 'hidden',
+                    touchAction: editMode ? 'none' : 'auto'
+                }}
+            >
+                <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    transform: `scale(${zoom})`,
+                    transformOrigin: '0 0',
+                    width: `${100 / zoom}%`,
+                    height: `${100 / zoom}%`
+                }}>
+                    {mesas.map(m => {
+                        const comanda = comandaDe(m.id);
+                        const estado = comanda ? 'ocupada' : (m.estado || 'libre');
+                        const color = estado === 'libre' ? '#22c55e' : estado === 'ocupada' ? '#f59e0b' : '#a855f7';
+                        const bg = estado === 'libre' ? 'rgba(34,197,94,0.15)' : estado === 'ocupada' ? 'rgba(245,158,11,0.15)' : 'rgba(168,85,247,0.15)';
+                        const ageMin = comanda ? Math.floor((Date.now() - new Date(comanda.fecha).getTime()) / 60000) : 0;
+                        const urgent = ageMin > 60;
+                        const size = Math.max(70, Math.min(110, 60 + m.capacidad * 6));
+
+                        return (
+                            <div
+                                key={m.id}
+                                onPointerDown={e => onPointerDown(e, m)}
+                                onClick={e => {
+                                    if (editMode || draggingId) return;
+                                    // En modo view: click cicla estado libre→ocupada→reservada→libre
+                                    const nextEstado = m.estado === 'libre' ? 'ocupada' : m.estado === 'ocupada' ? 'reservada' : 'libre';
+                                    cambiarEstado(m.id, nextEstado);
+                                }}
+                                onDoubleClick={() => {
+                                    if (editMode) return;
+                                    setForm({ ...EMPTY, ...m });
+                                    setEditId(m.id);
+                                    setOpen(true);
+                                }}
+                                style={{
+                                    position: 'absolute',
+                                    left: m.x || 50,
+                                    top: m.y || 50,
+                                    width: size,
+                                    height: size,
+                                    borderRadius: m.capacidad >= 6 ? '18px' : '50%',
+                                    background: bg,
+                                    border: `3px solid ${color}`,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: editMode ? 'grab' : 'pointer',
+                                    userSelect: 'none',
+                                    touchAction: editMode ? 'none' : 'auto',
+                                    transition: draggingId === m.id ? 'none' : 'transform 0.15s, box-shadow 0.15s',
+                                    transform: draggingId === m.id ? 'scale(1.08)' : 'scale(1)',
+                                    boxShadow: draggingId === m.id ? '0 12px 30px rgba(0,0,0,0.4)' : urgent ? '0 0 0 3px rgba(239,68,68,0.4)' : 'none',
+                                    zIndex: draggingId === m.id ? 100 : 1
+                                }}
+                                title={editMode ? 'Arrastrá para mover' : 'Click: cambiar estado · Doble-click: editar'}
+                            >
+                                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+                                    {m.numero}
+                                </div>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                                    {m.capacidad} pax
+                                </div>
+                                {comanda && (
+                                    <div style={{
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        color: urgent ? '#ef4444' : color,
+                                        marginTop: 3
+                                    }}>
+                                        ⏱️ {ageMin}m
+                                    </div>
+                                )}
+                                {editMode && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: -6, right: -6,
+                                        background: 'var(--accent)',
+                                        color: '#0a0a0f',
+                                        width: 18, height: 18,
+                                        borderRadius: '50%',
+                                        fontSize: 10,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                    }}>
+                                        ⇕
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* Leyenda */}
+            <div style={{
+                display: 'flex',
+                gap: 16,
+                marginTop: 12,
+                padding: 10,
+                background: 'var(--bg-elevated)',
+                borderRadius: 10,
+                fontSize: 12,
+                flexWrap: 'wrap',
+                justifyContent: 'center'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 14, height: 14, borderRadius: '50%', background: 'rgba(34,197,94,0.2)', border: '2px solid #22c55e' }} />
+                    <span>Libre</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 14, height: 14, borderRadius: '50%', background: 'rgba(245,158,11,0.2)', border: '2px solid #f59e0b' }} />
+                    <span>Ocupada</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 14, height: 14, borderRadius: '50%', background: 'rgba(168,85,247,0.2)', border: '2px solid #a855f7' }} />
+                    <span>Reservada</span>
+                </div>
+                <div style={{ color: 'var(--text-muted)' }}>
+                    · Circular = hasta 4 pax · Redondeada = 6+ pax
+                </div>
+            </div>
         </div>
     );
 }

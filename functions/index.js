@@ -363,3 +363,125 @@ export const afipUltimoComprobante = onCall(
         }
     }
 );
+
+// ═══════════════════════════════════════════════════════════════════
+// FCM - Envío de notificaciones push
+// ═══════════════════════════════════════════════════════════════════
+
+import { getMessaging } from 'firebase-admin/messaging';
+
+/**
+ * Enviar push notification a todos los devices de un usuario
+ * Callable: sendPushToUser({ title, body, url?, tag?, data? })
+ *
+ * Uso: cuando un agente AI termina análisis, cuando hay stock crítico,
+ * cuando llega comanda si la app está cerrada, etc.
+ */
+export const sendPushToUser = onCall(
+    { memory: '256MiB' },
+    async (req) => {
+        if (!req.auth) throw new HttpsError('unauthenticated', 'Login requerido');
+
+        const { title, body, url = '/', tag = 'dashboard', data = {}, targetUid } = req.data || {};
+        if (!title || !body) throw new HttpsError('invalid-argument', 'title y body son requeridos');
+
+        // Por defecto envía al usuario logueado, o a targetUid si se pasó (requiere permisos admin)
+        const uid = targetUid || req.auth.uid;
+
+        // Leer todos los tokens del usuario
+        const tokensSnap = await db.collection('users').doc(uid).collection('fcmTokens').get();
+        if (tokensSnap.empty) {
+            return { sent: 0, failed: 0, reason: 'Usuario sin devices registrados para push' };
+        }
+
+        const tokens = tokensSnap.docs.map(d => d.data().token).filter(Boolean);
+
+        // FCM permite hasta 500 tokens por llamada sendEachForMulticast
+        const messaging = getMessaging();
+        const response = await messaging.sendEachForMulticast({
+            tokens,
+            notification: { title, body },
+            data: { url, tag, ...data },
+            webpush: {
+                fcmOptions: { link: url },
+                notification: {
+                    icon: '/icon-192.svg',
+                    badge: '/icon-192.svg',
+                    tag,
+                    requireInteraction: false
+                }
+            }
+        });
+
+        // Limpiar tokens inválidos
+        const batch = db.batch();
+        response.responses.forEach((res, idx) => {
+            if (!res.success && (
+                res.error?.code === 'messaging/registration-token-not-registered' ||
+                res.error?.code === 'messaging/invalid-registration-token'
+            )) {
+                batch.delete(tokensSnap.docs[idx].ref);
+            }
+        });
+        if (response.failureCount > 0) await batch.commit();
+
+        return {
+            sent: response.successCount,
+            failed: response.failureCount,
+            totalDevices: tokens.length
+        };
+    }
+);
+
+/**
+ * Trigger Firestore: cuando un agente genera output, mandarle push
+ * Esto lo hace andar "24/7" — el usuario recibe push aunque la app esté cerrada
+ */
+import { onDocumentCreated } from 'firebase-functions/v2/firestore';
+
+export const onAgentOutputCreated = onDocumentCreated(
+    'agent_outputs/{uid}/{agentId}/{timestamp}',
+    async (event) => {
+        const snap = event.data;
+        if (!snap) return;
+        const data = snap.data();
+        const { uid, agentId } = event.params;
+
+        // Leer tokens del usuario
+        const tokensSnap = await db.collection('users').doc(uid).collection('fcmTokens').get();
+        if (tokensSnap.empty) return;
+
+        const tokens = tokensSnap.docs.map(d => d.data().token).filter(Boolean);
+        if (tokens.length === 0) return;
+
+        const agentLabels = {
+            analista: 'Analista',
+            trendscout: 'Trend Scout',
+            content: 'Content Creator',
+            estratega: 'Estratega',
+            precios: 'Precios',
+            stockbot: 'Stock Bot',
+            clientebot: 'Cliente Bot',
+            ceo: 'CEO'
+        };
+
+        const title = `🤖 ${agentLabels[agentId] || agentId} terminó su análisis`;
+        const preview = (data.output || '').slice(0, 100);
+        const body = preview + (preview.length >= 100 ? '…' : '');
+
+        const messaging = getMessaging();
+        await messaging.sendEachForMulticast({
+            tokens,
+            notification: { title, body },
+            data: { url: '/', tag: `agent-${agentId}` },
+            webpush: {
+                fcmOptions: { link: '/' },
+                notification: {
+                    icon: '/icon-192.svg',
+                    badge: '/icon-192.svg',
+                    tag: `agent-${agentId}`
+                }
+            }
+        });
+    }
+);

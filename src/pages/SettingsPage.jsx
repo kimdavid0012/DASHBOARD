@@ -456,13 +456,16 @@ function PrinterCard({ t, currentLang }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// NOTIFICATIONS CARD
+// NOTIFICATIONS CARD — permisos locales + FCM push real
 // ═══════════════════════════════════════════════════════════════════
 function NotificationsCard({ currentLang }) {
     const [permission, setPermission] = useState('default');
     const [asking, setAsking] = useState(false);
     const [msg, setMsg] = useState('');
     const [installed, setInstalled] = useState(false);
+    const [fcmStatus, setFcmStatus] = useState({ ok: false, reason: 'Verificando...' });
+    const [fcmSubscribed, setFcmSubscribed] = useState(false);
+    const [pushLoading, setPushLoading] = useState(false);
 
     const label = (es, en, ko) => currentLang === 'ko' ? ko : currentLang === 'en' ? en : es;
 
@@ -470,6 +473,10 @@ function NotificationsCard({ currentLang }) {
         import('../utils/notifications').then(mod => {
             setPermission(mod.getPermissionState());
             setInstalled(mod.isInstalledAsPWA());
+        });
+        import('../utils/fcm').then(mod => {
+            setFcmStatus(mod.getFCMStatus());
+            setFcmSubscribed(!!mod.getCurrentToken());
         });
     }, []);
 
@@ -491,6 +498,42 @@ function NotificationsCard({ currentLang }) {
             setMsg('⚠️ ' + r.reason);
         }
         setAsking(false);
+    };
+
+    const subscribePush = async () => {
+        setPushLoading(true); setMsg('');
+        try {
+            const { subscribeToPush } = await import('../utils/fcm');
+            const { getCurrentUser } = await import('../utils/firebase');
+            const user = await getCurrentUser();
+            if (!user) {
+                setMsg('⚠️ ' + label('Tenés que activar modo Cloud primero', 'Enable Cloud mode first', '먼저 클라우드 모드를 활성화하세요'));
+                return;
+            }
+            const token = await subscribeToPush(user.uid);
+            setFcmSubscribed(true);
+            setMsg('✓ ' + label('Push activado para este dispositivo', 'Push active on this device', '이 기기에서 푸시 활성화됨'));
+        } catch (err) {
+            setMsg('⚠️ ' + err.message);
+        } finally {
+            setPushLoading(false);
+        }
+    };
+
+    const unsubscribePush = async () => {
+        setPushLoading(true);
+        try {
+            const { unsubscribeFromPush } = await import('../utils/fcm');
+            const { getCurrentUser } = await import('../utils/firebase');
+            const user = await getCurrentUser();
+            await unsubscribeFromPush(user?.uid);
+            setFcmSubscribed(false);
+            setMsg(label('Push desactivado en este dispositivo', 'Push disabled on this device', '이 기기에서 푸시 비활성화됨'));
+        } catch (err) {
+            setMsg('⚠️ ' + err.message);
+        } finally {
+            setPushLoading(false);
+        }
     };
 
     const test = async () => {
@@ -519,20 +562,21 @@ function NotificationsCard({ currentLang }) {
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                         {label(
-                            'Avisos de comandas nuevas, stock crítico y vencimientos AFIP',
-                            'Alerts for new orders, low stock and AFIP due dates',
-                            '새 주문, 재고 부족 및 AFIP 기한 알림'
+                            'Avisos de comandas, stock crítico, vencimientos AFIP y agentes AI',
+                            'Alerts for orders, stock, AFIP due dates and AI agents',
+                            '주문, 재고, AFIP 기한 및 AI 에이전트 알림'
                         )}
                     </div>
                 </div>
             </div>
 
+            {/* Local notifications status */}
             <div style={{
                 padding: 12,
                 background: 'var(--bg-elevated)',
                 border: `1px solid ${status.color}33`,
                 borderRadius: 10,
-                marginBottom: 12,
+                marginBottom: 10,
                 fontSize: 13,
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -541,7 +585,8 @@ function NotificationsCard({ currentLang }) {
                 gap: 8
             }}>
                 <div>
-                    <strong>{label('Estado', 'Status', '상태')}:</strong> <span style={{ color: status.color }}>{status.text}</span>
+                    <strong>{label('Permisos del navegador', 'Browser permission', '브라우저 권한')}:</strong>{' '}
+                    <span style={{ color: status.color }}>{status.text}</span>
                     {installed && (
                         <span style={{ marginLeft: 10, color: 'var(--accent)', fontSize: 11 }}>
                             · 📱 {label('Instalada como PWA', 'Installed as PWA', 'PWA로 설치됨')}
@@ -562,6 +607,42 @@ function NotificationsCard({ currentLang }) {
                 </div>
             </div>
 
+            {/* FCM PUSH — push real aunque app esté cerrada */}
+            {permission === 'granted' && (
+                <div style={{
+                    padding: 12,
+                    background: fcmSubscribed ? 'rgba(99,241,203,0.08)' : 'var(--bg-elevated)',
+                    border: `1px solid ${fcmSubscribed ? 'var(--border-accent)' : 'var(--border-color)'}`,
+                    borderRadius: 10,
+                    marginBottom: 10,
+                    fontSize: 13
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                        <div>
+                            <strong>🌐 {label('Push del servidor (FCM)', 'Server push (FCM)', '서버 푸시 (FCM)')}</strong>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                {fcmStatus.ok
+                                    ? (fcmSubscribed
+                                        ? '✓ ' + label('Este dispositivo recibe push aún con la app cerrada', 'This device receives push even when app is closed', '앱이 닫혀있어도 이 기기는 푸시를 받습니다')
+                                        : label('Recibirás push de agentes AI y alertas del servidor, aunque tengas la app cerrada', 'You\'ll receive AI agent pushes and server alerts even when the app is closed', '앱이 닫혀있어도 AI 에이전트와 서버 알림을 받습니다'))
+                                    : '⚠️ ' + fcmStatus.reason}
+                            </div>
+                        </div>
+                        {fcmStatus.ok && (
+                            <button
+                                className={fcmSubscribed ? 'btn btn-ghost btn-sm' : 'btn btn-primary btn-sm'}
+                                onClick={fcmSubscribed ? unsubscribePush : subscribePush}
+                                disabled={pushLoading}
+                            >
+                                {pushLoading ? '...' : (fcmSubscribed
+                                    ? label('Desactivar', 'Disable', '비활성화')
+                                    : label('Activar push', 'Enable push', '푸시 활성화'))}
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {msg && (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
                     {msg}
@@ -571,9 +652,9 @@ function NotificationsCard({ currentLang }) {
             {!installed && (
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: 10, background: 'rgba(99,241,203,0.05)', borderRadius: 8 }}>
                     💡 {label(
-                        'Tip: instalá Dashboard como app en tu celular (Chrome: ⋮ → "Instalar app") para que las notificaciones funcionen aún con la app cerrada.',
-                        'Tip: install Dashboard as an app (Chrome: ⋮ → "Install app") so notifications work even when closed.',
-                        '팁: Dashboard 를 앱으로 설치하면 (Chrome: ⋮ → "앱 설치") 닫혀 있어도 알림이 작동합니다.'
+                        'Instalá Dashboard como app (Chrome: ⋮ → "Instalar app") para que las notificaciones funcionen con la app cerrada.',
+                        'Install Dashboard as an app (Chrome: ⋮ → "Install app") so notifications work when the app is closed.',
+                        'Dashboard 를 앱으로 설치하면 (Chrome: ⋮ → "앱 설치") 닫혀있어도 알림이 작동합니다.'
                     )}
                 </div>
             )}
