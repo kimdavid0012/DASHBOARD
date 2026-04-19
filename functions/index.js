@@ -264,3 +264,102 @@ async function executeAgent(uid, agentId, state) {
 
     return { uid, agentId, output, timestamp };
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// AFIP - Facturación Electrónica (WSAA + WSFE)
+// ═══════════════════════════════════════════════════════════════════
+
+import { solicitarCAE, getUltimoComprobante, pingAFIP } from './afip.js';
+
+// Secrets AFIP
+const AFIP_CUIT = defineSecret('AFIP_CUIT');
+const AFIP_CERT_P12_BASE64 = defineSecret('AFIP_CERT_P12_BASE64');
+const AFIP_CERT_PASSPHRASE = defineSecret('AFIP_CERT_PASSPHRASE');
+
+/**
+ * Ping AFIP — verifica que cert + credenciales funcionen
+ * Callable: afipPing()
+ */
+export const afipPing = onCall(
+    { secrets: [AFIP_CUIT, AFIP_CERT_P12_BASE64, AFIP_CERT_PASSPHRASE], memory: '512MiB' },
+    async (req) => {
+        if (!req.auth) throw new HttpsError('unauthenticated', 'Login requerido');
+        const res = await pingAFIP();
+        return res;
+    }
+);
+
+/**
+ * Pedir CAE para una factura
+ * Callable: afipRequestCAE({ puntoVenta, tipoComprobante, ... })
+ *
+ * tipoComprobante: 1=Fact A, 6=Fact B, 11=Fact C, 19=Fact E
+ * docTipoDestino: 80=CUIT, 86=CUIL, 96=DNI, 99=Consumidor Final
+ */
+export const afipRequestCAE = onCall(
+    { secrets: [AFIP_CUIT, AFIP_CERT_P12_BASE64, AFIP_CERT_PASSPHRASE], memory: '512MiB', timeoutSeconds: 60 },
+    async (req) => {
+        if (!req.auth) throw new HttpsError('unauthenticated', 'Login requerido');
+
+        const { puntoVenta, tipoComprobante, importeTotal, importeNeto, importeIVA,
+                importeExento = 0, importeTrib = 0, concepto = 1,
+                cuitDestino = 0, docTipoDestino = 99, fechaCbte } = req.data || {};
+
+        if (!puntoVenta || !tipoComprobante) {
+            throw new HttpsError('invalid-argument', 'puntoVenta y tipoComprobante son requeridos');
+        }
+        if (importeTotal === undefined) {
+            throw new HttpsError('invalid-argument', 'importeTotal es requerido');
+        }
+
+        try {
+            const result = await solicitarCAE({
+                puntoVenta, tipoComprobante,
+                importeTotal, importeNeto, importeIVA,
+                importeExento, importeTrib, concepto,
+                cuitDestino, docTipoDestino, fechaCbte
+            });
+
+            // Guardar en Firestore para audit
+            await db.collection('afip_cae_log').add({
+                uid: req.auth.uid,
+                env: process.env.AFIP_ENV || 'homo',
+                request: req.data,
+                response: result,
+                createdAt: FieldValue.serverTimestamp()
+            });
+
+            return result;
+        } catch (err) {
+            // Guardar error también para debug
+            await db.collection('afip_cae_errors').add({
+                uid: req.auth.uid,
+                request: req.data,
+                error: err.message,
+                createdAt: FieldValue.serverTimestamp()
+            });
+            throw new HttpsError('internal', err.message);
+        }
+    }
+);
+
+/**
+ * Consultar último comprobante autorizado
+ * Callable: afipUltimoComprobante({ puntoVenta, tipoComprobante })
+ */
+export const afipUltimoComprobante = onCall(
+    { secrets: [AFIP_CUIT, AFIP_CERT_P12_BASE64, AFIP_CERT_PASSPHRASE], memory: '512MiB' },
+    async (req) => {
+        if (!req.auth) throw new HttpsError('unauthenticated', 'Login requerido');
+        const { puntoVenta, tipoComprobante } = req.data || {};
+        if (!puntoVenta || !tipoComprobante) {
+            throw new HttpsError('invalid-argument', 'puntoVenta y tipoComprobante son requeridos');
+        }
+        try {
+            const num = await getUltimoComprobante(puntoVenta, tipoComprobante);
+            return { numero: num };
+        } catch (err) {
+            throw new HttpsError('internal', err.message);
+        }
+    }
+);

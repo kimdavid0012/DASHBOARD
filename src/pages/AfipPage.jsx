@@ -132,6 +132,7 @@ export default function AfipPage() {
             <div className="tabs">
                 <button className={`tab ${tab === 'dashboard' ? 'active' : ''}`} onClick={() => setTab('dashboard')}>📊 Resumen</button>
                 <button className={`tab ${tab === 'facturas' ? 'active' : ''}`} onClick={() => setTab('facturas')}>📄 Facturas</button>
+                <button className={`tab ${tab === 'wsfe' ? 'active' : ''}`} onClick={() => setTab('wsfe')}>⚡ CAE Online</button>
                 <button className={`tab ${tab === 'veps' ? 'active' : ''}`} onClick={() => setTab('veps')}>💸 VEPs</button>
                 <button className={`tab ${tab === 'vencimientos' ? 'active' : ''}`} onClick={() => setTab('vencimientos')}>📅 Vencimientos</button>
                 <button className={`tab ${tab === 'config' ? 'active' : ''}`} onClick={() => setTab('config')}>⚙️ Configuración</button>
@@ -211,6 +212,7 @@ export default function AfipPage() {
             )}
 
             {tab === 'facturas' && <FacturasTab state={state} actions={actions} />}
+            {tab === 'wsfe' && <WsfeTab />}
             {tab === 'veps' && <VepsTab state={state} actions={actions} />}
             {tab === 'vencimientos' && <VencimientosTab vencimientos={proximosVencimientos} />}
             {tab === 'config' && <div><AfipConfigForm /></div>}
@@ -676,6 +678,233 @@ function VencimientosTab({ vencimientos }) {
                     );
                 })}
             </div>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// WSFE TAB — Factura electrónica online (pide CAE real a AFIP)
+// ═══════════════════════════════════════════════════════════════════
+function WsfeTab() {
+    const { state } = useData();
+    const [status, setStatus] = useState('idle'); // idle|pinging|ok|error|requesting
+    const [pingResult, setPingResult] = useState(null);
+    const [error, setError] = useState('');
+
+    // Factura form
+    const [form, setForm] = useState({
+        puntoVenta: state.business?.puntoVenta || 1,
+        tipoComprobante: 6, // Factura B default
+        docTipoDestino: 99, // CF default
+        cuitDestino: 0,
+        importeNeto: '',
+        importeIVA: '',
+        importeTotal: '',
+        concepto: 1 // Productos
+    });
+    const [caeResult, setCaeResult] = useState(null);
+
+    const testConnection = async () => {
+        setStatus('pinging'); setError('');
+        try {
+            const { callFunction } = await import('../utils/firebase');
+            const r = await callFunction('afipPing');
+            setPingResult(r);
+            setStatus(r.ok ? 'ok' : 'error');
+            if (!r.ok) setError(r.error || 'Error desconocido');
+        } catch (err) {
+            setStatus('error'); setError(err.message);
+        }
+    };
+
+    const requestCAE = async () => {
+        setStatus('requesting'); setError(''); setCaeResult(null);
+        try {
+            const { callFunction } = await import('../utils/firebase');
+            // Si es factura C (Monotributo) o no hay IVA, usar total como neto
+            const isC = Number(form.tipoComprobante) === 11;
+            const neto = Number(form.importeNeto || form.importeTotal);
+            const iva = isC ? 0 : Number(form.importeIVA || 0);
+            const total = Number(form.importeTotal);
+
+            const r = await callFunction('afipRequestCAE', {
+                puntoVenta: Number(form.puntoVenta),
+                tipoComprobante: Number(form.tipoComprobante),
+                docTipoDestino: Number(form.docTipoDestino),
+                cuitDestino: Number(form.cuitDestino || 0),
+                importeNeto: neto,
+                importeIVA: iva,
+                importeTotal: total,
+                concepto: Number(form.concepto)
+            });
+            setCaeResult(r);
+            setStatus('ok');
+        } catch (err) {
+            setStatus('error'); setError(err.message);
+        }
+    };
+
+    // Auto-calc IVA 21%
+    const autoCalcIVA = () => {
+        const neto = Number(form.importeNeto || 0);
+        if (neto > 0) {
+            const iva = neto * 0.21;
+            const total = neto + iva;
+            setForm({ ...form, importeIVA: iva.toFixed(2), importeTotal: total.toFixed(2) });
+        }
+    };
+
+    return (
+        <div style={{ display: 'grid', gap: 16 }}>
+            <InfoBox variant="info">
+                <strong>⚡ Facturación electrónica en vivo</strong>
+                <div style={{ marginTop: 6, fontSize: 13 }}>
+                    Esta sección se conecta directamente con AFIP vía WSAA (autenticación con certificado) + WSFEv1 (solicitud de CAE).
+                    Requiere configurar 3 <strong>secrets</strong> en Firebase Functions con tu certificado <code>.p12</code>,
+                    tu CUIT y el ambiente (<code>homo</code> para pruebas, <code>prod</code> para emitir real).
+                </div>
+            </InfoBox>
+
+            {/* Test connection card */}
+            <Card>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                    <div>
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>🔌 Test de conexión</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                            Verifica que tu certificado esté bien configurado y que AFIP responda.
+                        </div>
+                    </div>
+                    <button className="btn btn-primary" onClick={testConnection} disabled={status === 'pinging'}>
+                        {status === 'pinging' ? '⏳ Probando...' : '🔌 Probar conexión AFIP'}
+                    </button>
+                </div>
+
+                {pingResult && pingResult.ok && (
+                    <div style={{ marginTop: 12, padding: 12, background: 'var(--accent-soft)', borderRadius: 8, fontSize: 13 }}>
+                        <div>✅ <strong>Conexión OK</strong></div>
+                        <div style={{ marginTop: 6, color: 'var(--text-muted)' }}>
+                            Ambiente: <strong>{pingResult.env}</strong> · CUIT: <strong>{pingResult.cuit}</strong><br />
+                            AFIP AppServer: {pingResult.appServer} · DB: {pingResult.dbServer} · Auth: {pingResult.authServer}
+                        </div>
+                    </div>
+                )}
+                {status === 'error' && error && (
+                    <InfoBox variant="warning" style={{ marginTop: 12 }}>
+                        <strong>Error:</strong> {error}
+                        <div style={{ fontSize: 12, marginTop: 4 }}>
+                            Revisá que los secrets <code>AFIP_CERT_P12_BASE64</code>, <code>AFIP_CUIT</code> y (opcional) <code>AFIP_CERT_PASSPHRASE</code> estén configurados correctamente.
+                        </div>
+                    </InfoBox>
+                )}
+            </Card>
+
+            {/* Request CAE form */}
+            <Card title="🧾 Solicitar CAE para nueva factura" subtitle="AFIP genera el CAE y devuelve el número de comprobante oficial">
+                <div className="form-grid">
+                    <Field label="Punto de venta" required>
+                        <input className="input" type="number" min="1" value={form.puntoVenta} onChange={e => setForm({ ...form, puntoVenta: e.target.value })} />
+                    </Field>
+                    <Field label="Tipo de comprobante" required>
+                        <select className="select" value={form.tipoComprobante} onChange={e => setForm({ ...form, tipoComprobante: e.target.value })}>
+                            <option value="1">Factura A (01)</option>
+                            <option value="6">Factura B (06)</option>
+                            <option value="11">Factura C (11)</option>
+                            <option value="19">Factura E (19) — Exportación</option>
+                        </select>
+                    </Field>
+                    <Field label="Tipo de documento destino">
+                        <select className="select" value={form.docTipoDestino} onChange={e => setForm({ ...form, docTipoDestino: e.target.value })}>
+                            <option value="99">99 — Consumidor Final</option>
+                            <option value="80">80 — CUIT</option>
+                            <option value="86">86 — CUIL</option>
+                            <option value="96">96 — DNI</option>
+                        </select>
+                    </Field>
+                    <Field label="Nº de documento (CUIT/DNI)">
+                        <input className="input" type="number" value={form.cuitDestino} onChange={e => setForm({ ...form, cuitDestino: e.target.value })} placeholder="0 si es Consumidor Final" />
+                    </Field>
+                    <Field label="Concepto">
+                        <select className="select" value={form.concepto} onChange={e => setForm({ ...form, concepto: e.target.value })}>
+                            <option value="1">1 — Productos</option>
+                            <option value="2">2 — Servicios</option>
+                            <option value="3">3 — Productos y servicios</option>
+                        </select>
+                    </Field>
+                    <Field label="Importe neto (sin IVA)" hint="Sólo para A/B/E. Si es C, poné el total acá">
+                        <input className="input" type="number" step="0.01" value={form.importeNeto} onChange={e => setForm({ ...form, importeNeto: e.target.value })} onBlur={autoCalcIVA} />
+                    </Field>
+                    <Field label="IVA 21%" hint="Auto-calculado, editá si corresponde">
+                        <input className="input" type="number" step="0.01" value={form.importeIVA} onChange={e => setForm({ ...form, importeIVA: e.target.value })} disabled={Number(form.tipoComprobante) === 11} />
+                    </Field>
+                    <Field label="Total" required>
+                        <input className="input" type="number" step="0.01" value={form.importeTotal} onChange={e => setForm({ ...form, importeTotal: e.target.value })} />
+                    </Field>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16, gap: 8 }}>
+                    <button className="btn btn-primary btn-lg" onClick={requestCAE} disabled={status === 'requesting' || !form.importeTotal}>
+                        {status === 'requesting' ? '⏳ Pidiendo CAE a AFIP...' : '⚡ Solicitar CAE'}
+                    </button>
+                </div>
+
+                {caeResult && (
+                    <div style={{ marginTop: 16, padding: 16, background: 'var(--accent-soft)', border: '1px solid var(--border-accent)', borderRadius: 12 }}>
+                        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
+                            ✅ CAE otorgado por AFIP
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, fontSize: 13 }}>
+                            <div>
+                                <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>CAE</div>
+                                <div className="mono" style={{ fontSize: 16, fontWeight: 700 }}>{caeResult.cae}</div>
+                            </div>
+                            <div>
+                                <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>Vencimiento</div>
+                                <div style={{ fontSize: 15 }}>{caeResult.caeVencimiento}</div>
+                            </div>
+                            <div>
+                                <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>Nº de comprobante</div>
+                                <div className="mono" style={{ fontSize: 15, fontWeight: 600 }}>{String(caeResult.numeroComprobante).padStart(8, '0')}</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </Card>
+
+            {/* Setup instructions */}
+            <Card title="🔐 Cómo configurar (primer uso)" subtitle="Pasos necesarios para que AFIP responda">
+                <div style={{ fontSize: 13, lineHeight: 1.7 }}>
+                    <ol style={{ paddingLeft: 20, margin: 0 }}>
+                        <li><strong>Entrá a AFIP</strong> con tu clave fiscal → <em>Administrador de Relaciones</em></li>
+                        <li><strong>Generar certificado</strong>: elegí un alias (ej: <code>dashboard-app</code>), descargá el <code>.crt</code></li>
+                        <li><strong>Combinar en .p12</strong> en tu terminal:
+                            <div style={{ background: 'var(--bg-elevated)', padding: 10, borderRadius: 6, fontSize: 12, marginTop: 6, overflowX: 'auto' }}>
+                                <code className="mono">openssl pkcs12 -export -out afip.p12 -inkey private.key -in certificate.crt</code>
+                            </div>
+                        </li>
+                        <li><strong>Codificar en base64</strong>:
+                            <div style={{ background: 'var(--bg-elevated)', padding: 10, borderRadius: 6, fontSize: 12, marginTop: 6, overflowX: 'auto' }}>
+                                <code className="mono">base64 -w 0 afip.p12 {'>'} afip.p12.b64</code>
+                            </div>
+                        </li>
+                        <li><strong>Subir a Firebase Secrets</strong>:
+                            <div style={{ background: 'var(--bg-elevated)', padding: 10, borderRadius: 6, fontSize: 12, marginTop: 6, overflowX: 'auto' }}>
+                                <code className="mono">
+                                    firebase functions:secrets:set AFIP_CERT_P12_BASE64 {'<'} afip.p12.b64<br />
+                                    firebase functions:secrets:set AFIP_CUIT<br />
+                                    firebase functions:secrets:set AFIP_CERT_PASSPHRASE
+                                </code>
+                            </div>
+                        </li>
+                        <li><strong>Vincular al servicio WSFE</strong> en AFIP → Administrador de Relaciones → Nueva Relación → <code>WSFE</code> → elegí el alias del paso 2</li>
+                        <li><strong>Deploy</strong>:
+                            <div style={{ background: 'var(--bg-elevated)', padding: 10, borderRadius: 6, fontSize: 12, marginTop: 6 }}>
+                                <code className="mono">firebase deploy --only functions</code>
+                            </div>
+                        </li>
+                        <li><strong>Probar</strong> con el botón "🔌 Probar conexión AFIP" de arriba.</li>
+                    </ol>
+                </div>
+            </Card>
         </div>
     );
 }

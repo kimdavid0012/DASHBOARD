@@ -168,3 +168,18 @@ export async function updateUserDoc(uid, patch) {
     const fb = await initFirebase();
     await fb.setDoc(fb.doc(fb.firestore, 'users', uid), patch, { merge: true });
 }
+
+/**
+ * Call a Firebase Cloud Function (callable, not HTTP)
+ * @param {string} name - Function name (e.g. 'afipRequestCAE')
+ * @param {object} data - Request payload
+ * @returns {Promise<object>} The function's return value
+ */
+export async function callFunction(name, data = {}) {
+    await initFirebase();
+    const { getFunctions, httpsCallable } = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js');
+    const functions = getFunctions(app, 'us-central1');
+    const fn = httpsCallable(functions, name);
+    const result = await fn(data);
+    return result.data;
+}
