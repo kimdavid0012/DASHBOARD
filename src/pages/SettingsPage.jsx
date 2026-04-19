@@ -233,6 +233,9 @@ export default function SettingsPage() {
                         <Field label="Meta Pixel ID">
                             <input className="input" value={state.integraciones.metaPixelId || ''} onChange={e => { actions.updateIntegraciones({ metaPixelId: e.target.value }); showSaved(); }} />
                         </Field>
+                        <Field label="Meta Ad Account ID" hint="act_XXXXXXXXXX (para Meta Ads dashboard)">
+                            <input className="input" placeholder="act_123456789" value={state.integraciones.metaAdAccountId || ''} onChange={e => { actions.updateIntegraciones({ metaAdAccountId: e.target.value }); showSaved(); }} />
+                        </Field>
                         <Field label="Instagram Business ID">
                             <input className="input" value={state.integraciones.instagramBusinessId || ''} onChange={e => { actions.updateIntegraciones({ instagramBusinessId: e.target.value }); showSaved(); }} />
                         </Field>
@@ -250,6 +253,15 @@ export default function SettingsPage() {
                         </Field>
                         <Field label="Mercado Pago Access Token">
                             <input className="input" type="password" value={state.integraciones.mercadoPagoToken || ''} onChange={e => { actions.updateIntegraciones({ mercadoPagoToken: e.target.value }); showSaved(); }} />
+                        </Field>
+                        <Field label="Resend API Key" hint="Para enviar emails desde la app (resend.com)">
+                            <input className="input" type="password" value={state.integraciones.resendApiKey || ''} onChange={e => { actions.updateIntegraciones({ resendApiKey: e.target.value }); showSaved(); }} />
+                        </Field>
+                        <Field label="Email remitente (from)" hint="Ej: hola@tudominio.com (verificalo en Resend)">
+                            <input className="input" type="email" placeholder="hola@tudominio.com" value={state.integraciones.resendFromEmail || ''} onChange={e => { actions.updateIntegraciones({ resendFromEmail: e.target.value }); showSaved(); }} />
+                        </Field>
+                        <Field label="Nombre remitente" hint="Lo que ven los destinatarios antes del email">
+                            <input className="input" placeholder="Mi Tienda" value={state.integraciones.resendFromName || ''} onChange={e => { actions.updateIntegraciones({ resendFromName: e.target.value }); showSaved(); }} />
                         </Field>
                     </div>
                 </Card>

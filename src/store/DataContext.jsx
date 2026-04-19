@@ -41,6 +41,8 @@ const DEFAULT_STATE = {
     afipFacturas: [],      // Facturas emitidas (tipo A, B, C)
     afipVeps: [],          // VEPs pendientes y pagados
     afipVencimientos: [],  // Fechas importantes (IVA, IIBB, Ganancias)
+    emailTemplates: [],    // Plantillas de email guardadas
+    emailScheduled: [],    // Emails programados para enviar
     integraciones: {
         openaiKey: '', anthropicKey: '',
         elevenLabsKey: '',
@@ -247,6 +249,19 @@ export function DataProvider({ children }) {
             clearInterval(interval);
         };
     }, [hydrated, state.business?.name, state.reservas]);
+
+    // ───── EMAIL SCHEDULER ─────
+    // Corre check cada 5 min para enviar emails programados cuya fecha llegó
+    useEffect(() => {
+        if (!hydrated) return;
+
+        let stopScheduler = null;
+        import('../utils/emailScheduler').then(({ startEmailScheduler }) => {
+            stopScheduler = startEmailScheduler(state, actions);
+        }).catch(err => console.warn('Scheduler no disponible:', err));
+
+        return () => { if (stopScheduler) stopScheduler(); };
+    }, [hydrated]);
 
     // ───── AUTO-GENERAR GASTOS RECURRENTES ─────
     // Para cada gasto marcado con recurrente=true, verifica si corresponde

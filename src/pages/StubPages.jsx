@@ -410,12 +410,168 @@ export function MarketingPage({ onNavigate }) {
                         icon={Megaphone}
                         title="Conectá Meta Ads"
                         description="Vas a ver campañas activas, presupuesto, impresiones y conversiones."
-                        steps={['Andá a Configuración → Integraciones', 'Pegá tu Meta Access Token', 'Pegá tu Pixel ID (opcional)', 'Volvé acá']}
+                        steps={['Andá a Configuración → Integraciones', 'Pegá tu Meta Access Token', 'Pegá tu Ad Account ID (act_XXXXXXXXXX)', 'Volvé acá']}
                         onNavigate={() => onNavigate?.('settings')}
                     />
                 ) : (
-                    <Card><EmptyState icon={Megaphone} title="Meta conectado ✓" description="Dashboard de campañas se activará al ejecutar el agente de Marketing." /></Card>
+                    <MetaAdsDashboard state={state} />
                 )
+            )}
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// META ADS DASHBOARD REAL
+// ═══════════════════════════════════════════════════════════════════
+function MetaAdsDashboard({ state }) {
+    const [loading, setLoading] = React.useState(false);
+    const [error, setError] = React.useState('');
+    const [data, setData] = React.useState(() => {
+        try {
+            const cached = localStorage.getItem('meta_ads_cache_v1');
+            return cached ? JSON.parse(cached) : null;
+        } catch { return null; }
+    });
+
+    const token = state.integraciones.metaAccessToken;
+    const adAccountId = state.integraciones.metaAdAccountId;
+
+    const fetchAds = async () => {
+        if (!adAccountId) {
+            setError('Falta Ad Account ID (act_XXXXXXXXXX). Configuralo en Integraciones.');
+            return;
+        }
+        setLoading(true); setError('');
+        try {
+            const accountUrl = `https://graph.facebook.com/v19.0/${adAccountId}?fields=name,currency,amount_spent,balance&access_token=${token}`;
+            const fieldsExpr = 'id,name,status,objective,daily_budget,lifetime_budget,insights.date_preset(last_30d){impressions,clicks,spend,reach,cpc,cpm,ctr,conversions}';
+            const campaignsUrl = `https://graph.facebook.com/v19.0/${adAccountId}/campaigns?fields=${encodeURIComponent(fieldsExpr)}&limit=25&access_token=${token}`;
+
+            const [accountRes, campaignsRes] = await Promise.all([
+                fetch(accountUrl),
+                fetch(campaignsUrl)
+            ]);
+
+            if (!accountRes.ok) {
+                const errTxt = await accountRes.text();
+                throw new Error(`Error ${accountRes.status}: ${errTxt.slice(0, 200)}`);
+            }
+
+            const account = await accountRes.json();
+            const campaignsData = campaignsRes.ok ? await campaignsRes.json() : { data: [] };
+
+            const payload = {
+                account,
+                campaigns: campaignsData.data || [],
+                fetchedAt: new Date().toISOString()
+            };
+            setData(payload);
+            localStorage.setItem('meta_ads_cache_v1', JSON.stringify(payload));
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    React.useEffect(() => { if (adAccountId && !data) fetchAds(); }, [adAccountId]);
+
+    const account = data?.account;
+    const campaigns = data?.campaigns || [];
+
+    // Total stats
+    const totalImp = campaigns.reduce((s, c) => s + Number(c.insights?.data?.[0]?.impressions || 0), 0);
+    const totalClicks = campaigns.reduce((s, c) => s + Number(c.insights?.data?.[0]?.clicks || 0), 0);
+    const totalSpend = campaigns.reduce((s, c) => s + Number(c.insights?.data?.[0]?.spend || 0), 0);
+    const avgCtr = totalImp > 0 ? (totalClicks / totalImp * 100) : 0;
+
+    return (
+        <div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div>
+                    {account && (
+                        <>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>{account.name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                Moneda: {account.currency} · Gastado: {account.amount_spent}
+                            </div>
+                        </>
+                    )}
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={fetchAds} disabled={loading}>
+                    🔄 {loading ? 'Cargando...' : 'Actualizar'}
+                </button>
+            </div>
+
+            {error && (
+                <InfoBox variant="warning">
+                    <strong>Error:</strong> {error}
+                    <div style={{ fontSize: 12, marginTop: 8 }}>
+                        💡 Verificá: (1) Token vigente, (2) Ad Account ID correcto (empieza con "act_"),
+                        (3) El token tiene permisos ads_read + ads_management.
+                    </div>
+                </InfoBox>
+            )}
+
+            {data && (
+                <>
+                    <div className="kpi-grid mb-4">
+                        <KpiCard icon={<Megaphone size={20} />} label="Campañas (30d)" value={campaigns.length} color="#1877f2" />
+                        <KpiCard icon={<Eye size={20} />} label="Impresiones" value={totalImp.toLocaleString('es-AR')} color="#63f1cb" />
+                        <KpiCard icon={<Target size={20} />} label="Clicks" value={totalClicks.toLocaleString('es-AR')} color="#fbbf24" />
+                        <KpiCard icon={<DollarSign size={20} />} label="Gasto total" value={`$${totalSpend.toFixed(0)}`} color="#ef4444" />
+                        <KpiCard icon={<TrendingUp size={20} />} label="CTR promedio" value={`${avgCtr.toFixed(2)}%`} color="#a78bfa" />
+                    </div>
+
+                    {campaigns.length > 0 && (
+                        <Card title="📊 Campañas activas" subtitle="Últimos 30 días">
+                            <div className="table-wrap">
+                                <table className="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Campaña</th>
+                                            <th>Estado</th>
+                                            <th>Objetivo</th>
+                                            <th style={{ textAlign: 'right' }}>Imp.</th>
+                                            <th style={{ textAlign: 'right' }}>Clicks</th>
+                                            <th style={{ textAlign: 'right' }}>CTR</th>
+                                            <th style={{ textAlign: 'right' }}>CPC</th>
+                                            <th style={{ textAlign: 'right' }}>Gasto</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {campaigns.map(c => {
+                                            const ins = c.insights?.data?.[0] || {};
+                                            return (
+                                                <tr key={c.id}>
+                                                    <td className="font-semibold">{c.name}</td>
+                                                    <td>
+                                                        <Badge variant={c.status === 'ACTIVE' ? 'success' : c.status === 'PAUSED' ? 'warning' : 'muted'}>
+                                                            {c.status}
+                                                        </Badge>
+                                                    </td>
+                                                    <td className="text-sm text-muted">{c.objective || '—'}</td>
+                                                    <td style={{ textAlign: 'right' }} className="mono">{Number(ins.impressions || 0).toLocaleString('es-AR')}</td>
+                                                    <td style={{ textAlign: 'right' }} className="mono">{Number(ins.clicks || 0).toLocaleString('es-AR')}</td>
+                                                    <td style={{ textAlign: 'right' }} className="mono">{Number(ins.ctr || 0).toFixed(2)}%</td>
+                                                    <td style={{ textAlign: 'right' }} className="mono">${Number(ins.cpc || 0).toFixed(2)}</td>
+                                                    <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }} className="mono">${Number(ins.spend || 0).toFixed(2)}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Card>
+                    )}
+
+                    {campaigns.length === 0 && (
+                        <Card>
+                            <EmptyState icon={Megaphone} title="Sin campañas activas" description="No encontramos campañas en tu Ad Account en los últimos 30 días." />
+                        </Card>
+                    )}
+                </>
             )}
         </div>
     );
@@ -425,6 +581,7 @@ export function MarketingPage({ onNavigate }) {
 // EMAIL CAMPAIGNS — generador con IA
 // ═══════════════════════════════════════════════════════════════════
 function EmailCampaigns({ state }) {
+    const { actions } = useData();
     const [ocasion, setOcasion] = React.useState('promo');
     const [segmento, setSegmento] = React.useState('all');
     const [descuento, setDescuento] = React.useState('');
@@ -436,6 +593,11 @@ function EmailCampaigns({ state }) {
     const [ocasiones, setOcasiones] = React.useState([]);
     const [segmentos, setSegmentos] = React.useState([]);
     const [clientesSegmentados, setClientesSegmentados] = React.useState([]);
+    const [showTemplates, setShowTemplates] = React.useState(false);
+    const [sending, setSending] = React.useState(false);
+    const [sendResult, setSendResult] = React.useState(null);
+
+    const templates = state.emailTemplates || [];
 
     React.useEffect(() => {
         import('../utils/emailCampaigns').then(mod => {
@@ -477,7 +639,7 @@ function EmailCampaigns({ state }) {
 
     const copyAll = () => {
         if (!email) return;
-        const text = `SUBJECT: ${email.subject}\n\n${email.body_text}`;
+        const text = 'SUBJECT: ' + email.subject + '\n\n' + email.body_text;
         navigator.clipboard.writeText(text);
         alert('✅ Copiado al portapapeles');
     };
@@ -487,8 +649,88 @@ function EmailCampaigns({ state }) {
         const emails = clientesSegmentados.map(c => c.email).filter(Boolean).join(',');
         const subject = encodeURIComponent(email.subject);
         const body = encodeURIComponent(email.body_text);
-        window.location.href = `mailto:?bcc=${emails}&subject=${subject}&body=${body}`;
+        window.location.href = 'mailto:?bcc=' + emails + '&subject=' + subject + '&body=' + body;
     };
+
+    const sendViaResend = async () => {
+        if (!email) return;
+        const apiKey = state.integraciones.resendApiKey;
+        const fromEmail = state.integraciones.resendFromEmail;
+        if (!apiKey) { alert('Falta Resend API Key. Configurala en Configuración → Integraciones.'); return; }
+        if (!fromEmail) { alert('Falta email remitente.'); return; }
+        const recipients = clientesSegmentados.filter(c => c.email);
+        if (recipients.length === 0) { alert('Ningún cliente tiene email registrado.'); return; }
+        if (!confirm('¿Enviar este email a ' + recipients.length + ' persona(s)?')) return;
+
+        setSending(true); setSendResult(null);
+        try {
+            const { sendEmailsViaResend } = await import('../utils/emailCampaigns');
+            const result = await sendEmailsViaResend({
+                apiKey, fromEmail,
+                fromName: state.integraciones.resendFromName,
+                recipients, subject: email.subject, html: email.body_html, text: email.body_text
+            });
+            setSendResult(result);
+        } catch (err) {
+            setSendResult({ sent: 0, failed: recipients.length, errors: [{ error: err.message }] });
+        } finally {
+            setSending(false);
+        }
+    };
+
+    const scheduleEmail = () => {
+        if (!email) return;
+        const recipients = clientesSegmentados.filter(c => c.email);
+        if (recipients.length === 0) { alert('Ningún cliente tiene email registrado.'); return; }
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(10, 0, 0, 0);
+        const defaultVal = tomorrow.toISOString().slice(0, 16).replace('T', ' ');
+        const when = prompt('¿Cuándo enviar? Formato: YYYY-MM-DD HH:MM', defaultVal);
+        if (!when) return;
+        const sendAt = new Date(when.replace(' ', 'T'));
+        if (isNaN(sendAt.getTime())) { alert('Fecha inválida'); return; }
+        if (sendAt.getTime() < Date.now()) { alert('La fecha tiene que ser futura'); return; }
+        actions.add('emailScheduled', {
+            sendAt: sendAt.toISOString(),
+            subject: email.subject, preheader: email.preheader,
+            body_html: email.body_html, body_text: email.body_text,
+            recipients: recipients.map(r => ({ email: r.email, nombre: r.nombre })),
+            status: 'pending', createdAt: new Date().toISOString(),
+            ocasion, segmento
+        });
+        const dateStr = sendAt.toLocaleDateString('es-AR');
+        alert('✅ Email programado para ' + dateStr + '. El dashboard debe estar abierto a esa hora.');
+    };
+
+    const saveAsTemplate = () => {
+        if (!email) return;
+        const name = prompt('Nombre de la plantilla:', email.subject.slice(0, 40));
+        if (!name) return;
+        actions.add('emailTemplates', {
+            nombre: name, ocasion, segmento,
+            subject: email.subject, preheader: email.preheader,
+            body_html: email.body_html, body_text: email.body_text
+        });
+        alert('✅ Plantilla "' + name + '" guardada.');
+    };
+
+    const loadTemplate = (tpl) => {
+        setEmail({
+            subject: tpl.subject, preheader: tpl.preheader,
+            body_html: tpl.body_html, body_text: tpl.body_text
+        });
+        setOcasion(tpl.ocasion || 'promo');
+        setSegmento(tpl.segmento || 'all');
+        setShowTemplates(false);
+    };
+
+    const deleteTemplate = (id) => {
+        if (!confirm('¿Eliminar esta plantilla?')) return;
+        actions.remove('emailTemplates', id);
+    };
+
+    const withEmailCount = clientesSegmentados.filter(c => c.email).length;
 
     return (
         <div>
@@ -501,21 +743,17 @@ function EmailCampaigns({ state }) {
                                 {ocasiones.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                             </select>
                         </Field>
-
                         <Field label="Segmento destinatario">
                             <select className="select" value={segmento} onChange={e => setSegmento(e.target.value)}>
                                 {segmentos.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                             </select>
                         </Field>
-
                         <Field label="Descuento (opcional)">
                             <input className="input" placeholder="15% / $5000" value={descuento} onChange={e => setDescuento(e.target.value)} />
                         </Field>
-
                         <Field label="Código cupón (opcional)">
                             <input className="input" placeholder="VIP15" value={cupon} onChange={e => setCupon(e.target.value)} />
                         </Field>
-
                         <Field label="Producto destacado (opcional)">
                             <select className="select" value={productoId} onChange={e => setProductoId(e.target.value)}>
                                 <option value="">— Ninguno —</option>
@@ -526,14 +764,11 @@ function EmailCampaigns({ state }) {
                         </Field>
                     </div>
 
-                    <div style={{
-                        marginTop: 16, padding: 12, background: 'var(--bg-elevated)',
-                        borderRadius: 10, fontSize: 13
-                    }}>
-                        <strong>📊 Destinatarios:</strong> {clientesSegmentados.length} cliente{clientesSegmentados.length !== 1 ? 's' : ''} en este segmento
+                    <div style={{ marginTop: 16, padding: 12, background: 'var(--bg-elevated)', borderRadius: 10, fontSize: 13 }}>
+                        <strong>📊 Destinatarios:</strong> {clientesSegmentados.length} cliente(s) en este segmento
                         {clientesSegmentados.length > 0 && (
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                                {clientesSegmentados.filter(c => c.email).length} con email registrado
+                                {withEmailCount} con email registrado
                             </div>
                         )}
                     </div>
@@ -542,17 +777,38 @@ function EmailCampaigns({ state }) {
                         {generating ? '⏳ Generando...' : '✨ Generar email con IA'}
                     </button>
 
+                    {templates.length > 0 && (
+                        <div style={{ marginTop: 12 }}>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setShowTemplates(!showTemplates)} style={{ width: '100%' }}>
+                                📁 {showTemplates ? 'Ocultar' : 'Mis plantillas'} ({templates.length})
+                            </button>
+                            {showTemplates && (
+                                <div style={{ marginTop: 8, padding: 10, background: 'var(--bg-elevated)', borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+                                    {templates.map(tpl => (
+                                        <div key={tpl.id} style={{ display: 'flex', gap: 6, alignItems: 'center', padding: 8, background: 'var(--bg-card)', borderRadius: 8, fontSize: 12 }}>
+                                            <button onClick={() => loadTemplate(tpl)} style={{ flex: 1, textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-primary)', fontSize: 12 }}>
+                                                <div style={{ fontWeight: 600 }}>{tpl.nombre}</div>
+                                                <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>
+                                                    {ocasiones.find(o => o.id === tpl.ocasion)?.label || tpl.ocasion}
+                                                </div>
+                                            </button>
+                                            <button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteTemplate(tpl.id)} title="Eliminar">
+                                                <Trash2 size={11} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {error && <InfoBox variant="warning" style={{ marginTop: 12 }}><strong>Error:</strong> {error}</InfoBox>}
                 </Card>
 
                 {/* Preview panel */}
                 <Card title="📬 Preview del email">
                     {!email ? (
-                        <EmptyState
-                            icon={Megaphone}
-                            title="Tu email aparecerá acá"
-                            description="Configurá la ocasión y segmento, luego tocá 'Generar'."
-                        />
+                        <EmptyState icon={Megaphone} title="Tu email aparecerá acá" description="Configurá la ocasión y segmento, luego tocá Generar." />
                     ) : (
                         <div>
                             <div style={{ padding: 12, background: 'var(--bg-elevated)', borderRadius: 10, marginBottom: 12 }}>
@@ -565,33 +821,42 @@ function EmailCampaigns({ state }) {
                                 )}
                             </div>
 
-                            <div style={{
-                                padding: 16, background: 'white', color: '#222',
-                                borderRadius: 10, minHeight: 200, fontSize: 14, lineHeight: 1.5
-                            }}>
+                            <div style={{ padding: 16, background: 'white', color: '#222', borderRadius: 10, minHeight: 200, fontSize: 14, lineHeight: 1.5 }}>
                                 <div dangerouslySetInnerHTML={{ __html: email.body_html }} />
                             </div>
 
                             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                                <button className="btn btn-ghost btn-sm" onClick={copyAll}>
-                                    📋 Copiar
-                                </button>
-                                <button
-                                    className="btn btn-primary btn-sm"
-                                    onClick={openInMailto}
-                                    disabled={clientesSegmentados.filter(c => c.email).length === 0}
-                                >
-                                    ✉️ Abrir en Mail ({clientesSegmentados.filter(c => c.email).length})
-                                </button>
-                                <button className="btn btn-ghost btn-sm" onClick={() => setEmail(null)}>
-                                    ✕ Descartar
-                                </button>
+                                <button className="btn btn-ghost btn-sm" onClick={copyAll}>📋 Copiar</button>
+                                <button className="btn btn-ghost btn-sm" onClick={saveAsTemplate}>💾 Guardar plantilla</button>
+                                <button className="btn btn-ghost btn-sm" onClick={scheduleEmail} disabled={withEmailCount === 0}>⏰ Programar</button>
+                                <button className="btn btn-ghost btn-sm" onClick={openInMailto} disabled={withEmailCount === 0}>✉️ Abrir en Mail ({withEmailCount})</button>
+                                {state.integraciones.resendApiKey && (
+                                    <button className="btn btn-primary btn-sm" onClick={sendViaResend} disabled={sending || withEmailCount === 0}>
+                                        {sending ? '⏳ Enviando...' : '🚀 Enviar ahora (' + withEmailCount + ')'}
+                                    </button>
+                                )}
+                                <button className="btn btn-ghost btn-sm" onClick={() => { setEmail(null); setSendResult(null); }}>✕ Descartar</button>
                             </div>
 
+                            {sendResult && (
+                                <div style={{ marginTop: 12, padding: 12, background: sendResult.failed === 0 ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)', borderRadius: 10, fontSize: 13 }}>
+                                    {sendResult.sent > 0 && <div>✅ Enviados: {sendResult.sent}</div>}
+                                    {sendResult.failed > 0 && <div>⚠️ Fallaron: {sendResult.failed}</div>}
+                                    {sendResult.errors?.length > 0 && (
+                                        <details style={{ marginTop: 8, fontSize: 11 }}>
+                                            <summary style={{ cursor: 'pointer' }}>Ver errores</summary>
+                                            <div style={{ marginTop: 6 }}>
+                                                {sendResult.errors.slice(0, 5).map((err, idx) => (
+                                                    <div key={idx}>{err.email || 'N/A'}: {err.error}</div>
+                                                ))}
+                                            </div>
+                                        </details>
+                                    )}
+                                </div>
+                            )}
+
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12, padding: 10, background: 'rgba(99,241,203,0.05)', borderRadius: 8 }}>
-                                💡 <strong>Tip:</strong> "Abrir en Mail" usa tu cliente de correo (Gmail, Outlook) para enviar.
-                                Si tenés Resend o Brevo, copiá el HTML y pegalo ahí.
-                                El placeholder {'{nombre}'} se reemplaza por el primer nombre del cliente.
+                                💡 Tip: el placeholder <code>{'\u007Bnombre\u007D'}</code> se reemplaza por el primer nombre del cliente al enviar.
                             </div>
                         </div>
                     )}
@@ -600,7 +865,6 @@ function EmailCampaigns({ state }) {
         </div>
     );
 }
-
 export function InstagramPage({ onNavigate }) {
     const t = useT();
     const { state } = useData();

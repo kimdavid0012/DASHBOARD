@@ -209,3 +209,64 @@ export function personalizeEmail(email, cliente) {
         body_text: email.body_text.replace(/\{nombre\}/g, nombre)
     };
 }
+
+/**
+ * Envía email vía Resend API (https://resend.com)
+ * Requiere RESEND_API_KEY. El usuario debe verificar su dominio en Resend
+ * antes de poder enviar emails "from" con su dominio.
+ *
+ * Devuelve {sent, failed, errors[]}
+ */
+export async function sendEmailsViaResend({ apiKey, fromEmail, fromName, recipients, subject, html, text }) {
+    if (!apiKey) throw new Error('Falta RESEND_API_KEY');
+    if (!fromEmail) throw new Error('Falta email de envío (from)');
+    if (!recipients?.length) throw new Error('Sin destinatarios');
+
+    const results = { sent: 0, failed: 0, errors: [] };
+
+    // Resend rate limit: 10 requests/segundo. Enviamos en batches con delay.
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
+        const batch = recipients.slice(i, i + BATCH_SIZE);
+
+        await Promise.all(batch.map(async (recipient) => {
+            try {
+                // Personalizar por destinatario
+                const personalizedHtml = html.replace(/\{nombre\}/g, recipient.nombre?.split(' ')[0] || 'Hola');
+                const personalizedSubject = subject.replace(/\{nombre\}/g, recipient.nombre?.split(' ')[0] || '');
+                const personalizedText = text.replace(/\{nombre\}/g, recipient.nombre?.split(' ')[0] || 'Hola');
+
+                const res = await fetch('https://api.resend.com/emails', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        from: fromName ? `${fromName} <${fromEmail}>` : fromEmail,
+                        to: [recipient.email],
+                        subject: personalizedSubject,
+                        html: personalizedHtml,
+                        text: personalizedText
+                    })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ message: res.statusText }));
+                    throw new Error(err.message || `HTTP ${res.status}`);
+                }
+                results.sent++;
+            } catch (err) {
+                results.failed++;
+                results.errors.push({ email: recipient.email, error: err.message });
+            }
+        }));
+
+        // Rate limit protection
+        if (i + BATCH_SIZE < recipients.length) {
+            await new Promise(r => setTimeout(r, 1100));
+        }
+    }
+
+    return results;
+}
