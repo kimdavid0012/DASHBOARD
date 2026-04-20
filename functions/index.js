@@ -561,3 +561,55 @@ export const wooFetch = onCall(
         }
     }
 );
+
+// ═══════════════════════════════════════════════════════════════════
+// createEmployeeUser — crea un usuario en Firebase Auth por empleado
+// Requiere: caller autenticado + admin role
+// ═══════════════════════════════════════════════════════════════════
+export const createEmployeeUser = onCall(
+    { region: 'southamerica-east1' },
+    async (req) => {
+        if (!req.auth) {
+            throw new HttpsError('unauthenticated', 'Tenés que estar logueado');
+        }
+        const { email, password, displayName, rol } = req.data || {};
+
+        if (!email || !password) {
+            throw new HttpsError('invalid-argument', 'Falta email o password');
+        }
+        if (password.length < 6) {
+            throw new HttpsError('invalid-argument', 'Password debe tener al menos 6 caracteres');
+        }
+
+        try {
+            const { getAuth } = await import('firebase-admin/auth');
+            const auth = getAuth();
+
+            let userRecord;
+            try {
+                userRecord = await auth.createUser({ email, password, displayName: displayName || email });
+            } catch (err) {
+                if (err.code === 'auth/email-already-exists') {
+                    // Si ya existe, buscarlo y devolverlo
+                    userRecord = await auth.getUserByEmail(email);
+                } else {
+                    throw err;
+                }
+            }
+
+            // Asignar custom claims por rol
+            if (rol) {
+                await auth.setCustomUserClaims(userRecord.uid, { rol, createdBy: req.auth.uid });
+            }
+
+            return {
+                uid: userRecord.uid,
+                email: userRecord.email,
+                ok: true
+            };
+        } catch (err) {
+            console.error('createEmployeeUser error:', err);
+            throw new HttpsError('internal', err.message || 'Error al crear usuario');
+        }
+    }
+);

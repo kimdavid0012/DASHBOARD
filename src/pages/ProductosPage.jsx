@@ -75,6 +75,93 @@ export default function ProductosPage() {
     const showTalles = state.business.rubro === 'accesorios';
     const showBarcode = state.business.rubro === 'kiosco';
 
+    const [syncingWoo, setSyncingWoo] = useState(false);
+    const [syncMsg, setSyncMsg] = useState('');
+
+    const syncProductsFromWoo = async () => {
+        const hasWoo = state.integraciones.wooStoreUrl && state.integraciones.wooConsumerKey && state.integraciones.wooConsumerSecret;
+        if (!hasWoo) {
+            alert('Configurá WooCommerce en Configuración → Integraciones');
+            return;
+        }
+        if (!confirm('¿Traer productos de tu tienda web con fotos? Se agregarán los que no existen localmente (match por código/SKU).')) return;
+
+        setSyncingWoo(true); setSyncMsg('Conectando con WooCommerce...');
+        try {
+            const { wooApiFetch } = await import('../utils/wooClient');
+            let page = 1;
+            let allProducts = [];
+
+            while (page <= 10) {
+                setSyncMsg('Trayendo página ' + page + '...');
+                const { data, error } = await wooApiFetch('products?per_page=100&page=' + page, state);
+                if (error) throw new Error(error);
+                if (!data || data.length === 0) break;
+                allProducts = allProducts.concat(data);
+                if (data.length < 100) break;
+                page++;
+            }
+
+            setSyncMsg('Procesando ' + allProducts.length + ' productos...');
+
+            const existentes = new Map();
+            (state.productos || []).forEach(p => {
+                if (p.codigo) existentes.set(String(p.codigo).toLowerCase(), p);
+                if (p.wooProductId) existentes.set('woo-' + p.wooProductId, p);
+            });
+
+            const nuevos = [];
+            let actualizados = 0;
+
+            for (const wp of allProducts) {
+                const sku = (wp.sku || '').toLowerCase().trim();
+                const wooKey = 'woo-' + wp.id;
+                const existe = existentes.get(sku) || existentes.get(wooKey);
+                const mainImage = wp.images?.[0]?.src || null;
+                const allImages = (wp.images || []).map(img => img.src);
+
+                if (!existe) {
+                    nuevos.push({
+                        nombre: wp.name || 'Producto web',
+                        codigo: wp.sku || null,
+                        categoria: wp.categories?.[0]?.name || 'General',
+                        precioVenta: Number(wp.price || wp.regular_price || 0),
+                        precioCosto: 0,
+                        stock: Number(wp.stock_quantity || 0),
+                        stockMinimo: 5,
+                        unidad: 'unidad',
+                        descripcion: (wp.short_description || wp.description || '').replace(/<[^>]+>/g, '').slice(0, 500),
+                        activo: wp.status === 'publish',
+                        imagen: mainImage,
+                        imagenes: allImages,
+                        wooProductId: wp.id,
+                        wooPermalink: wp.permalink,
+                        origen: 'woocommerce'
+                    });
+                } else {
+                    const patch = {};
+                    if (mainImage && !existe.imagen) patch.imagen = mainImage;
+                    if (allImages.length > 0 && !existe.imagenes?.length) patch.imagenes = allImages;
+                    if (wp.stock_quantity != null && existe.stock !== Number(wp.stock_quantity)) patch.stock = Number(wp.stock_quantity);
+                    if (!existe.wooProductId) patch.wooProductId = wp.id;
+                    if (Object.keys(patch).length > 0) {
+                        actions.update('productos', existe.id, patch);
+                        actualizados++;
+                    }
+                }
+            }
+
+            if (nuevos.length > 0) actions.bulkAdd('productos', nuevos);
+
+            setSyncMsg('✅ ' + nuevos.length + ' nuevos, ' + actualizados + ' actualizados (stock/fotos). Total web: ' + allProducts.length);
+            setTimeout(() => setSyncMsg(''), 8000);
+        } catch (err) {
+            setSyncMsg('⚠️ Error: ' + err.message);
+        } finally {
+            setSyncingWoo(false);
+        }
+    };
+
     return (
         <div>
             <PageHeader
@@ -82,8 +169,28 @@ export default function ProductosPage() {
                 title={labels.items}
                 subtitle={`Catálogo central de ${labels.itemPlural}`}
                 help={SECTION_HELP.productos}
-                actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setEditId(null); setOpen(true); }}><Plus size={14} /> Nuevo {labels.item.toLowerCase()}</button>}
+                actions={
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        {state.integraciones.wooStoreUrl && (
+                            <button className="btn btn-ghost" onClick={syncProductsFromWoo} disabled={syncingWoo}>
+                                {syncingWoo ? '⏳ Sync...' : '🌐 Traer de web'}
+                            </button>
+                        )}
+                        <button className="btn btn-primary" onClick={() => { setForm(EMPTY); setEditId(null); setOpen(true); }}>
+                            <Plus size={14} /> Nuevo {labels.item.toLowerCase()}
+                        </button>
+                    </div>
+                }
             />
+            {syncMsg && (
+                <div style={{
+                    marginBottom: 12, padding: 10,
+                    background: syncMsg.startsWith('✅') ? 'rgba(34,197,94,0.1)' : syncMsg.startsWith('⚠️') ? 'rgba(239,68,68,0.1)' : 'rgba(99,241,203,0.1)',
+                    borderRadius: 8, fontSize: 13
+                }}>
+                    {syncMsg}
+                </div>
+            )}
 
             <div className="kpi-grid mb-4">
                 <KpiCard icon={<Package size={20} />} label={`Total ${labels.items}`} value={stats.total} color="#63f1cb" />
@@ -125,6 +232,7 @@ export default function ProductosPage() {
                         <table className="table">
                             <thead>
                                 <tr>
+                                    <th style={{ width: 52 }}></th>
                                     <th>Código</th><th>{labels.item}</th><th>{labels.category}</th>
                                     <th style={{ textAlign: 'right' }}>P. Costo</th>
                                     <th style={{ textAlign: 'right' }}>P. Venta</th>
@@ -139,10 +247,36 @@ export default function ProductosPage() {
                                     const outOfStock = Number(p.stock || 0) <= 0;
                                     return (
                                         <tr key={p.id}>
-                                            <td><span style={{ fontFamily: 'monospace' }}>{p.codigo || '—'}</span></td>
+                                            <td>
+                                                {p.imagen ? (
+                                                    <img
+                                                        src={p.imagen}
+                                                        alt=""
+                                                        style={{
+                                                            width: 44, height: 44, objectFit: 'cover',
+                                                            borderRadius: 8, border: '1px solid var(--border-color)',
+                                                            background: 'var(--bg-elevated)'
+                                                        }}
+                                                        onError={e => { e.target.style.display = 'none'; }}
+                                                    />
+                                                ) : (
+                                                    <div style={{
+                                                        width: 44, height: 44, borderRadius: 8,
+                                                        background: 'var(--bg-elevated)',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        color: 'var(--text-muted)', fontSize: 10
+                                                    }}>
+                                                        <Package size={16} />
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td><span style={{ fontFamily: 'monospace', fontSize: 12 }}>{p.codigo || '—'}</span></td>
                                             <td>
                                                 <div className="font-semibold">{p.nombre}</div>
-                                                {p.descripcion && <div className="text-xs text-muted">{p.descripcion}</div>}
+                                                {p.origen === 'woocommerce' && (
+                                                    <Badge variant="info" style={{ fontSize: 9 }}>🌐 Web</Badge>
+                                                )}
+                                                {p.descripcion && <div className="text-xs text-muted">{p.descripcion.slice(0, 80)}</div>}
                                             </td>
                                             <td>{p.categoria && <Badge>{p.categoria}</Badge>}</td>
                                             <td style={{ textAlign: 'right' }}>{fmtMoney(p.precioCosto, state.business.moneda)}</td>

@@ -14,6 +14,8 @@ export function ClientesPage() {
     const [editId, setEditId] = useState(null);
     const EMPTY = { nombre: '', telefono: '', email: '', direccion: '', ciudad: '', notas: '' };
     const [form, setForm] = useState(EMPTY);
+    const [syncing, setSyncing] = useState(false);
+    const [syncMsg, setSyncMsg] = useState('');
 
     const save = () => {
         if (!form.nombre.trim()) return alert('Nombre es obligatorio');
@@ -24,18 +26,98 @@ export function ClientesPage() {
 
     const totalPorCliente = (cid) => state.ventas.filter(v => v.clienteId === cid).reduce((s, v) => s + Number(v.total || 0), 0);
 
+    const syncFromWoo = async () => {
+        const hasWoo = state.integraciones.wooStoreUrl && state.integraciones.wooConsumerKey && state.integraciones.wooConsumerSecret;
+        if (!hasWoo) {
+            alert('Configurá WooCommerce en Configuración → Integraciones (URL + Consumer Key + Secret)');
+            return;
+        }
+        if (!confirm('¿Traer todos los clientes de tu tienda web? Se van a agregar los que no existen localmente.')) return;
+
+        setSyncing(true); setSyncMsg('Conectando con WooCommerce...');
+        try {
+            const { wooApiFetch } = await import('../utils/wooClient');
+            let page = 1;
+            let allCustomers = [];
+            let totalTraidos = 0;
+
+            // Paginar hasta 500 clientes
+            while (page <= 5) {
+                setSyncMsg('Trayendo página ' + page + '...');
+                const { data, error } = await wooApiFetch('customers?per_page=100&page=' + page, state);
+                if (error) throw new Error(error);
+                if (!data || data.length === 0) break;
+                allCustomers = allCustomers.concat(data);
+                if (data.length < 100) break;
+                page++;
+            }
+
+            setSyncMsg('Procesando ' + allCustomers.length + ' clientes...');
+
+            // Agregar los que no existen (match por email)
+            const existentes = new Set((state.clientes || []).map(c => (c.email || '').toLowerCase()).filter(Boolean));
+            const nuevos = [];
+
+            for (const c of allCustomers) {
+                const email = (c.email || '').toLowerCase();
+                if (!email || existentes.has(email)) continue;
+                nuevos.push({
+                    nombre: ((c.first_name || '') + ' ' + (c.last_name || '')).trim() || c.username || 'Cliente web',
+                    email: c.email,
+                    telefono: c.billing?.phone || '',
+                    direccion: [c.billing?.address_1, c.billing?.address_2].filter(Boolean).join(', '),
+                    ciudad: c.billing?.city || '',
+                    notas: 'Importado de WooCommerce #' + c.id,
+                    wooCustomerId: c.id,
+                    origen: 'woocommerce'
+                });
+                totalTraidos++;
+            }
+
+            if (nuevos.length > 0) {
+                actions.bulkAdd('clientes', nuevos);
+            }
+
+            setSyncMsg('✅ ' + totalTraidos + ' cliente(s) nuevos importados. ' + (allCustomers.length - totalTraidos) + ' ya existían.');
+            setTimeout(() => setSyncMsg(''), 5000);
+        } catch (err) {
+            setSyncMsg('⚠️ Error: ' + err.message);
+        } finally {
+            setSyncing(false);
+        }
+    };
+
     return (
         <div>
             <PageHeader
                 icon={Users2}
                 title={labels.clients}
-                subtitle="CRM básico"
+                subtitle="CRM con sync web"
                 help={SECTION_HELP.clientes}
-                actions={<button className="btn btn-primary" onClick={() => { setForm(EMPTY); setEditId(null); setOpen(true); }}><Plus size={14} /> Nuevo {labels.client.toLowerCase()}</button>}
+                actions={
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        {state.integraciones.wooStoreUrl && (
+                            <button className="btn btn-ghost" onClick={syncFromWoo} disabled={syncing}>
+                                {syncing ? '⏳ Sync...' : '🌐 Traer de web'}
+                            </button>
+                        )}
+                        <button className="btn btn-primary" onClick={() => { setForm(EMPTY); setEditId(null); setOpen(true); }}><Plus size={14} /> Nuevo {labels.client.toLowerCase()}</button>
+                    </div>
+                }
             />
+            {syncMsg && (
+                <div style={{
+                    marginBottom: 12, padding: 10,
+                    background: syncMsg.startsWith('✅') ? 'rgba(34,197,94,0.1)' : syncMsg.startsWith('⚠️') ? 'rgba(239,68,68,0.1)' : 'rgba(99,241,203,0.1)',
+                    borderRadius: 8, fontSize: 13
+                }}>
+                    {syncMsg}
+                </div>
+            )}
             <div className="kpi-grid mb-4">
                 <KpiCard icon={<Users2 size={20} />} label={labels.clients} value={state.clientes.length} color="#63f1cb" />
                 <KpiCard icon={<Users2 size={20} />} label="Con histórico" value={state.clientes.filter(c => state.ventas.some(v => v.clienteId === c.id)).length} color="#22c55e" />
+                <KpiCard icon={<Users2 size={20} />} label="De web" value={state.clientes.filter(c => c.origen === 'woocommerce').length} color="#a855f7" />
             </div>
             <Card>
                 {state.clientes.length === 0 ? (
@@ -226,9 +308,17 @@ export function CajaDiariaPage() {
     const current = state.meta.currentSucursalId || 'all';
     const [open, setOpen] = useState(false);
     const [editId, setEditId] = useState(null);
+
+    // Denominaciones argentinas (y genéricas)
+    const DENOMINACIONES = state.business.moneda === 'USD'
+        ? [100, 50, 20, 10, 5, 2, 1]
+        : [10000, 2000, 1000, 500, 200, 100, 50, 20, 10];
+
     const EMPTY = {
         fecha: new Date().toISOString().slice(0, 10), sucursalId: '',
-        apertura: 0, cierre: 0, notas: ''
+        apertura: 0, cierre: 0, notas: '',
+        denominacionesApertura: {}, denominacionesCierre: {},
+        metodosPagoCierre: { efectivo: 0, tarjeta: 0, transferencia: 0, mercadopago: 0, otro: 0 }
     };
     const [form, setForm] = useState(EMPTY);
 
@@ -236,10 +326,32 @@ export function CajaDiariaPage() {
 
     const ventasDelDia = (suc, fecha) => state.ventas.filter(v => v.sucursalId === suc && (v.fecha || '').slice(0, 10) === fecha).reduce((s, v) => s + Number(v.total || 0), 0);
     const gastosDelDia = (suc, fecha) => state.gastos.filter(g => g.sucursalId === suc && (g.fecha || '').slice(0, 10) === fecha).reduce((s, g) => s + Number(g.monto || 0), 0);
+    const ventasEfectivoDelDia = (suc, fecha) => state.ventas.filter(v => v.sucursalId === suc && (v.fecha || '').slice(0, 10) === fecha && (v.metodo === 'efectivo' || v.metodo === 'Efectivo')).reduce((s, v) => s + Number(v.total || 0), 0);
+
+    // Total contado por denominaciones
+    const totalDenominaciones = (denoObj) => {
+        return Object.entries(denoObj || {}).reduce((s, [bill, qty]) => s + Number(bill) * Number(qty || 0), 0);
+    };
+
+    // Auto-recalcular cuando cambian denominaciones
+    React.useEffect(() => {
+        if (!open) return;
+        const totalApertura = totalDenominaciones(form.denominacionesApertura);
+        const totalCierre = totalDenominaciones(form.denominacionesCierre);
+        setForm(f => ({
+            ...f,
+            apertura: totalApertura > 0 ? totalApertura : f.apertura,
+            cierre: totalCierre > 0 ? totalCierre : f.cierre
+        }));
+    }, [form.denominacionesApertura, form.denominacionesCierre]);
 
     const save = () => {
         if (!form.sucursalId) return alert('Sucursal obligatoria');
-        const patch = { ...form, apertura: Number(form.apertura), cierre: Number(form.cierre) };
+        const patch = {
+            ...form,
+            apertura: Number(form.apertura),
+            cierre: Number(form.cierre)
+        };
         if (editId) actions.update('cajaDiaria', editId, patch);
         else actions.add('cajaDiaria', patch);
         setOpen(false);
@@ -250,12 +362,13 @@ export function CajaDiariaPage() {
             <PageHeader
                 icon={PiggyBank}
                 title="Caja diaria"
-                subtitle="Apertura y cierre Z por día"
+                subtitle="Apertura, arqueo y cierre Z con denominaciones"
                 help={SECTION_HELP.caja}
-                actions={<button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}><Plus size={14} /> Nueva caja</button>}
+                actions={<button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}><Plus size={14} /> Cerrar caja</button>}
             />
             <InfoBox variant="info">
-                <strong>Fórmula:</strong> Esperado = Apertura + Ventas del día (efectivo) − Gastos del día. Diferencia = Cierre declarado − Esperado. Si la diferencia es negativa y grande, revisá.
+                <strong>💡 Cómo funciona:</strong> 1) Al abrir el día registrás lo que hay en caja contando billete por billete.
+                2) Al cerrar, contás de nuevo e ingresás el total por método de pago. 3) Dashboard te muestra la diferencia y alerta si hay faltante.
             </InfoBox>
             <Card style={{ marginTop: 12 }}>
                 {cajas.length === 0 ? (
@@ -264,25 +377,25 @@ export function CajaDiariaPage() {
                         title="Sin cierres de caja"
                         description="Registrá apertura y cierre diario para trackear diferencias."
                         action={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={14} /> Primer cierre</button>}
-                        tips={['Monto de apertura al abrir el día', 'Ventas del día calculadas automáticamente', 'Gastos del día descontados', 'Cierre declarado vs esperado', 'Alerta de diferencias']}
-                        example="Ej: Apertura $5.000 + Ventas $120.000 - Gastos $3.000 = Esperado $122.000"
+                        tips={['Conteo billete por billete', 'Ventas en efectivo del día', 'Desglose por método de pago', 'Diferencia con alerta']}
+                        example="Ej: Apertura $5.000 + Ventas efectivo $85.000 = Esperado $90.000. Contaste $89.500 → faltan $500"
                     />
                 ) : (
                     <div className="table-wrap">
                         <table className="table">
-                            <thead><tr><th>Fecha</th><th>Sucursal</th><th style={{ textAlign: 'right' }}>Apertura</th><th style={{ textAlign: 'right' }}>Ventas</th><th style={{ textAlign: 'right' }}>Gastos</th><th style={{ textAlign: 'right' }}>Esperado</th><th style={{ textAlign: 'right' }}>Cierre</th><th style={{ textAlign: 'right' }}>Dif.</th><th></th></tr></thead>
+                            <thead><tr><th>Fecha</th><th>Sucursal</th><th style={{ textAlign: 'right' }}>Apertura</th><th style={{ textAlign: 'right' }}>Ventas ef.</th><th style={{ textAlign: 'right' }}>Gastos</th><th style={{ textAlign: 'right' }}>Esperado</th><th style={{ textAlign: 'right' }}>Cierre</th><th style={{ textAlign: 'right' }}>Dif.</th><th></th></tr></thead>
                             <tbody>
                                 {cajas.map(c => {
-                                    const v = ventasDelDia(c.sucursalId, c.fecha);
+                                    const ventasEf = ventasEfectivoDelDia(c.sucursalId, c.fecha);
                                     const g = gastosDelDia(c.sucursalId, c.fecha);
-                                    const esperado = Number(c.apertura || 0) + v - g;
+                                    const esperado = Number(c.apertura || 0) + ventasEf - g;
                                     const diff = Number(c.cierre || 0) - esperado;
                                     return (
                                         <tr key={c.id}>
                                             <td className="text-sm">{fmtDate(c.fecha)}</td>
                                             <td className="text-sm">{state.sucursales.find(s => s.id === c.sucursalId)?.nombre || '—'}</td>
                                             <td style={{ textAlign: 'right' }}>{fmtMoney(c.apertura, state.business.moneda)}</td>
-                                            <td style={{ textAlign: 'right', color: 'var(--success)' }}>+{fmtMoney(v, state.business.moneda)}</td>
+                                            <td style={{ textAlign: 'right', color: 'var(--success)' }}>+{fmtMoney(ventasEf, state.business.moneda)}</td>
                                             <td style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(g, state.business.moneda)}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(esperado, state.business.moneda)}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(c.cierre, state.business.moneda)}</td>
@@ -303,17 +416,125 @@ export function CajaDiariaPage() {
                     </div>
                 )}
             </Card>
-            <Modal open={open} onClose={() => setOpen(false)} title={editId ? 'Editar cierre' : 'Nuevo cierre de caja'}>
+            <Modal open={open} onClose={() => setOpen(false)} title={editId ? 'Editar cierre Z' : '🏦 Cierre Z / Arqueo de caja'} size="lg">
                 <div className="form-grid">
                     <Field label="Fecha" required><input className="input" type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></Field>
                     <Field label="Sucursal" required><select className="select" value={form.sucursalId} onChange={e => setForm({ ...form, sucursalId: e.target.value })}><option value="">Elegir...</option>{state.sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></Field>
-                    <Field label="Apertura" hint="Lo que dejaste al abrir"><input className="input" type="number" value={form.apertura} onChange={e => setForm({ ...form, apertura: e.target.value })} /></Field>
-                    <Field label="Cierre" hint="Lo que realmente hay en caja"><input className="input" type="number" value={form.cierre} onChange={e => setForm({ ...form, cierre: e.target.value })} /></Field>
                 </div>
-                <div className="mt-3"><Field label="Notas"><textarea className="textarea" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} /></Field></div>
+
+                {/* APERTURA con denominaciones */}
+                <div style={{ marginTop: 16, padding: 14, background: 'rgba(99,241,203,0.04)', borderRadius: 12, border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <strong style={{ fontSize: 14 }}>🌅 Apertura</strong>
+                        <div style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>
+                            Total: {fmtMoney(form.apertura || 0, state.business.moneda)}
+                        </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
+                        {DENOMINACIONES.map(bill => (
+                            <div key={bill} style={{ padding: 8, background: 'var(--bg-elevated)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div style={{ minWidth: 50, fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>
+                                    {fmtMoney(bill, state.business.moneda)}
+                                </div>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    min="0"
+                                    placeholder="0"
+                                    value={form.denominacionesApertura[bill] || ''}
+                                    onChange={e => setForm({
+                                        ...form,
+                                        denominacionesApertura: {
+                                            ...form.denominacionesApertura,
+                                            [bill]: e.target.value
+                                        }
+                                    })}
+                                    style={{ padding: '6px 8px', fontSize: 12, minHeight: 'auto' }}
+                                />
+                            </div>
+                        ))}
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
+                        💡 O ingresá el total directo: <input type="number" className="input" style={{ display: 'inline-block', width: 120, marginLeft: 6, padding: '4px 8px', minHeight: 'auto' }} value={form.apertura || 0} onChange={e => setForm({ ...form, apertura: e.target.value, denominacionesApertura: {} })} />
+                    </div>
+                </div>
+
+                {/* CIERRE con denominaciones */}
+                <div style={{ marginTop: 14, padding: 14, background: 'rgba(245,158,11,0.04)', borderRadius: 12, border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <strong style={{ fontSize: 14 }}>🌆 Cierre (efectivo contado)</strong>
+                        <div style={{ fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>
+                            Total: {fmtMoney(form.cierre || 0, state.business.moneda)}
+                        </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
+                        {DENOMINACIONES.map(bill => (
+                            <div key={bill} style={{ padding: 8, background: 'var(--bg-elevated)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div style={{ minWidth: 50, fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>
+                                    {fmtMoney(bill, state.business.moneda)}
+                                </div>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    min="0"
+                                    placeholder="0"
+                                    value={form.denominacionesCierre[bill] || ''}
+                                    onChange={e => setForm({
+                                        ...form,
+                                        denominacionesCierre: {
+                                            ...form.denominacionesCierre,
+                                            [bill]: e.target.value
+                                        }
+                                    })}
+                                    style={{ padding: '6px 8px', fontSize: 12, minHeight: 'auto' }}
+                                />
+                            </div>
+                        ))}
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
+                        💡 O ingresá el total directo: <input type="number" className="input" style={{ display: 'inline-block', width: 120, marginLeft: 6, padding: '4px 8px', minHeight: 'auto' }} value={form.cierre || 0} onChange={e => setForm({ ...form, cierre: e.target.value, denominacionesCierre: {} })} />
+                    </div>
+                </div>
+
+                {/* RESUMEN */}
+                {form.fecha && form.sucursalId && (
+                    <div style={{ marginTop: 14, padding: 14, background: 'var(--bg-elevated)', borderRadius: 12 }}>
+                        <strong style={{ fontSize: 13 }}>📊 Resumen del día</strong>
+                        {(() => {
+                            const ventasEf = ventasEfectivoDelDia(form.sucursalId, form.fecha);
+                            const gast = gastosDelDia(form.sucursalId, form.fecha);
+                            const esperado = Number(form.apertura || 0) + ventasEf - gast;
+                            const diff = Number(form.cierre || 0) - esperado;
+                            return (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginTop: 10, fontSize: 12 }}>
+                                    <div><div style={{ color: 'var(--text-muted)', fontSize: 11 }}>Apertura</div><div style={{ fontWeight: 600 }}>{fmtMoney(form.apertura || 0, state.business.moneda)}</div></div>
+                                    <div><div style={{ color: 'var(--text-muted)', fontSize: 11 }}>Ventas efectivo</div><div style={{ fontWeight: 600, color: 'var(--success)' }}>+{fmtMoney(ventasEf, state.business.moneda)}</div></div>
+                                    <div><div style={{ color: 'var(--text-muted)', fontSize: 11 }}>Gastos</div><div style={{ fontWeight: 600, color: 'var(--danger)' }}>-{fmtMoney(gast, state.business.moneda)}</div></div>
+                                    <div><div style={{ color: 'var(--text-muted)', fontSize: 11 }}>Esperado</div><div style={{ fontWeight: 700, fontSize: 14 }}>{fmtMoney(esperado, state.business.moneda)}</div></div>
+                                    <div style={{
+                                        padding: 8,
+                                        background: Math.abs(diff) < 100 ? 'rgba(34,197,94,0.15)' : diff < 0 ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+                                        borderRadius: 8,
+                                        gridColumn: 'span 2'
+                                    }}>
+                                        <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>Diferencia</div>
+                                        <div style={{ fontWeight: 700, fontSize: 14, color: Math.abs(diff) < 100 ? 'var(--success)' : diff < 0 ? 'var(--danger)' : 'var(--warning)' }}>
+                                            {diff >= 0 ? '+' : ''}{fmtMoney(diff, state.business.moneda)}
+                                            {Math.abs(diff) < 100 && ' ✓ OK'}
+                                            {diff < -100 && ' ⚠️ Falta'}
+                                            {diff > 100 && ' ⚠️ Sobra'}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                )}
+
+                <div className="mt-3"><Field label="Notas (ej: observaciones, firma del cajero)"><textarea className="textarea" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} /></Field></div>
                 <div className="flex gap-2 mt-4 justify-end">
                     <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
-                    <button className="btn btn-primary" onClick={save}>{editId ? 'Guardar' : 'Crear'}</button>
+                    <button className="btn btn-primary" onClick={save}>{editId ? 'Guardar' : 'Cerrar caja'}</button>
                 </div>
             </Modal>
         </div>

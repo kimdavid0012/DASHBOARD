@@ -83,6 +83,81 @@ export function MesasPage() {
                 <KpiCard icon={<XCircle size={20} />} label="Reservadas" value={mesas.filter(m => m.estado === 'reservada').length} color="#a855f7" />
             </div>
 
+            {/* BARRA VISUAL DE OCUPACIÓN */}
+            {mesas.length > 0 && (() => {
+                const libres = mesas.filter(m => m.estado === 'libre').length;
+                const ocupadas = mesas.filter(m => m.estado === 'ocupada').length;
+                const reservadas = mesas.filter(m => m.estado === 'reservada').length;
+                const total = mesas.length;
+                const pctLibres = (libres / total) * 100;
+                const pctOcupadas = (ocupadas / total) * 100;
+                const pctReservadas = (reservadas / total) * 100;
+                const capacidadTotal = mesas.reduce((s, m) => s + Number(m.capacidad || 0), 0);
+                const capacidadOcupada = mesas.filter(m => m.estado === 'ocupada').reduce((s, m) => s + Number(m.capacidad || 0), 0);
+
+                return (
+                    <Card style={{ marginBottom: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                            <div>
+                                <div style={{ fontSize: 13, fontWeight: 600 }}>Estado del salón en vivo</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                    Capacidad: <strong>{capacidadOcupada}/{capacidadTotal}</strong> personas · {((capacidadOcupada / (capacidadTotal || 1)) * 100).toFixed(0)}% ocupación
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 12, fontSize: 12, flexWrap: 'wrap' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                    <span style={{ width: 10, height: 10, background: '#22c55e', borderRadius: '50%', display: 'inline-block' }} />
+                                    <strong>{libres}</strong> libres
+                                </span>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                    <span style={{
+                                        width: 10, height: 10, background: '#f59e0b', borderRadius: '50%', display: 'inline-block',
+                                        animation: ocupadas > 0 ? 'pulse 2s infinite' : 'none'
+                                    }} />
+                                    <strong>{ocupadas}</strong> ocupadas
+                                </span>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                    <span style={{ width: 10, height: 10, background: '#a855f7', borderRadius: '50%', display: 'inline-block' }} />
+                                    <strong>{reservadas}</strong> reservadas
+                                </span>
+                            </div>
+                        </div>
+                        <div style={{
+                            display: 'flex', height: 28, borderRadius: 14, overflow: 'hidden',
+                            background: 'var(--bg-elevated)', fontSize: 11, fontWeight: 700
+                        }}>
+                            {pctLibres > 0 && (
+                                <div style={{
+                                    width: pctLibres + '%', background: '#22c55e', color: '#0a0a0f',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    transition: 'width 0.4s var(--ease)', minWidth: pctLibres > 5 ? 'auto' : 0
+                                }}>
+                                    {pctLibres > 10 && Math.round(pctLibres) + '% libre'}
+                                </div>
+                            )}
+                            {pctOcupadas > 0 && (
+                                <div style={{
+                                    width: pctOcupadas + '%', background: '#f59e0b', color: '#0a0a0f',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    transition: 'width 0.4s var(--ease)', minWidth: pctOcupadas > 5 ? 'auto' : 0
+                                }}>
+                                    {pctOcupadas > 10 && Math.round(pctOcupadas) + '% ocup.'}
+                                </div>
+                            )}
+                            {pctReservadas > 0 && (
+                                <div style={{
+                                    width: pctReservadas + '%', background: '#a855f7', color: 'white',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    transition: 'width 0.4s var(--ease)', minWidth: pctReservadas > 5 ? 'auto' : 0
+                                }}>
+                                    {pctReservadas > 10 && Math.round(pctReservadas) + '% res.'}
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+                );
+            })()}
+
             <Card>
                 {mesas.length === 0 ? (
                     <EmptyState

@@ -38,7 +38,7 @@ export default function BackupPage() {
         })();
     }, []);
 
-    // Auto-backup to folder every 30 min if enabled
+    // Auto-backup to folder every 15 min if enabled (antes era 30 min)
     useEffect(() => {
         if (!autoBackupEnabled || !backupFolder) return;
         const iv = setInterval(async () => {
@@ -49,7 +49,7 @@ export default function BackupPage() {
             } catch (err) {
                 console.warn('Auto-backup failed:', err);
             }
-        }, 30 * 60 * 1000);
+        }, 15 * 60 * 1000); // 15 min
         return () => clearInterval(iv);
     }, [autoBackupEnabled, backupFolder, state]);
 

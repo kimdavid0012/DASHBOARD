@@ -255,6 +255,123 @@ export function AgentsPage({ onNavigate }) {
         }
     };
 
+    // ═══════════════════════════════════════════════════════════════════
+    // RUN ALL — ejecuta todos los agentes excepto CEO, luego CEO que sintetiza
+    // ═══════════════════════════════════════════════════════════════════
+    const runAllAgents = async () => {
+        if (!hasKey) return alert('Cargá una API key en Configuración → Integraciones');
+        if (!confirm('Esto va a ejecutar los 8 agentes uno tras otro. Puede tardar 1-2 minutos y consume tokens. ¿Continuar?')) return;
+
+        // 1. Marcar todos como running
+        const allRunning = {};
+        AGENTS.forEach(a => { allRunning[a.id] = true; });
+        setRunning(allRunning);
+
+        const newOutputs = { ...outputs };
+        const subAgentes = AGENTS.filter(a => a.id !== 'ceo');
+
+        // 2. Ejecutar sub-agentes en secuencia
+        for (const agent of subAgentes) {
+            try {
+                const basePrompt = agent.buildPrompt(state, labels);
+                const prompt = `⚠️ CRITICAL LANGUAGE RULE: ${langInstructions()}\n\n---\n\n${basePrompt}`;
+                let reply = '';
+
+                if (state.integraciones.anthropicKey) {
+                    const res = await fetch('https://api.anthropic.com/v1/messages', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-api-key': state.integraciones.anthropicKey,
+                            'anthropic-version': '2023-06-01',
+                            'anthropic-dangerous-direct-browser-access': 'true'
+                        },
+                        body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 1500, messages: [{ role: 'user', content: prompt }] })
+                    });
+                    const data = await res.json();
+                    if (data.error) throw new Error(data.error.message);
+                    reply = data.content?.[0]?.text || '';
+                } else if (state.integraciones.openaiKey) {
+                    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.integraciones.openaiKey}` },
+                        body: JSON.stringify({ model: 'gpt-4o-mini', max_tokens: 1500, messages: [{ role: 'user', content: prompt }] })
+                    });
+                    const data = await res.json();
+                    if (data.error) throw new Error(data.error.message);
+                    reply = data.choices?.[0]?.message?.content || '';
+                }
+
+                newOutputs[agent.id] = { text: reply, at: new Date().toISOString() };
+                setOutputs({ ...newOutputs });
+                setRunning(r => ({ ...r, [agent.id]: false }));
+            } catch (err) {
+                newOutputs[agent.id] = { text: `❌ Error: ${err.message}`, at: new Date().toISOString() };
+                setOutputs({ ...newOutputs });
+                setRunning(r => ({ ...r, [agent.id]: false }));
+            }
+        }
+
+        // 3. CEO sintetiza los outputs de los otros
+        try {
+            const subOutputs = subAgentes
+                .map(a => `### ${a.emoji} ${a.nombre}\n${newOutputs[a.id]?.text || '(sin output)'}`)
+                .join('\n\n---\n\n');
+
+            const ceoPrompt = `⚠️ CRITICAL LANGUAGE RULE: ${langInstructions()}\n\n---\n\nSos el CEO virtual de ${state.business.name || 'este negocio'}.
+
+Acabás de recibir los reportes de TODOS tus agentes. Tu trabajo es SINTETIZAR todo en un briefing ejecutivo de máximo 10 bullets que el dueño pueda leer en 60 segundos.
+
+═══ REPORTES DE LOS AGENTES ═══
+
+${subOutputs}
+
+═══════════════════════════════════════
+
+Ahora generá el BRIEFING EJECUTIVO:
+
+- 🎯 Estado general del negocio (1 frase)
+- 💰 Número más importante hoy
+- 🚨 Fuego (si algún agente detectó algo urgente)
+- 📈 Oportunidad destacada (combiná lo que vieron los agentes)
+- 🛑 Alerta de stock/caja/clientes
+- ⚡ 3 acciones concretas para los próximos 2 días
+- 🧠 Decisión estratégica pendiente esta semana
+- 🤝 Qué agente tuvo la mejor insight y por qué
+
+Estilo: conciso, nivel board, sin rodeos. Sintetizás, no repetís.`;
+
+            let ceoReply = '';
+            if (state.integraciones.anthropicKey) {
+                const res = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-api-key': state.integraciones.anthropicKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+                    body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 2000, messages: [{ role: 'user', content: ceoPrompt }] })
+                });
+                const data = await res.json();
+                if (data.error) throw new Error(data.error.message);
+                ceoReply = data.content?.[0]?.text || '';
+            } else {
+                const res = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.integraciones.openaiKey}` },
+                    body: JSON.stringify({ model: 'gpt-4o-mini', max_tokens: 2000, messages: [{ role: 'user', content: ceoPrompt }] })
+                });
+                const data = await res.json();
+                if (data.error) throw new Error(data.error.message);
+                ceoReply = data.choices?.[0]?.message?.content || '';
+            }
+
+            newOutputs['ceo'] = { text: ceoReply, at: new Date().toISOString(), synthesizedFrom: subAgentes.map(a => a.id) };
+            setOutputs({ ...newOutputs });
+        } catch (err) {
+            newOutputs['ceo'] = { text: `❌ Error CEO: ${err.message}`, at: new Date().toISOString() };
+            setOutputs({ ...newOutputs });
+        } finally {
+            setRunning(r => ({ ...r, ceo: false }));
+        }
+    };
+
     return (
         <div>
             <PageHeader
@@ -264,7 +381,16 @@ export function AgentsPage({ onNavigate }) {
                 help={SECTION_HELP.agents}
                 actions={
                     hasKey ? (
-                        <Badge variant="success">● API conectada</Badge>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <Badge variant="success">● API conectada</Badge>
+                            <button
+                                className="btn btn-primary"
+                                onClick={runAllAgents}
+                                disabled={Object.values(running).some(Boolean)}
+                            >
+                                🚀 Correr todos los agentes
+                            </button>
+                        </div>
                     ) : (
                         <button className="btn btn-primary" onClick={() => onNavigate?.('settings')}>
                             <Settings2 size={14} /> Conectar API

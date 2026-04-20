@@ -262,6 +262,22 @@ export async function writeToBackupFolder(state) {
     };
     await writable.write(JSON.stringify(payload, null, 2));
     await writable.close();
+
+    // ROTACIÓN: mantener últimos 10 archivos (anti-data-loss + anti-carpeta-llena)
+    try {
+        const backupFiles = [];
+        for await (const entry of handle.values()) {
+            if (entry.kind === 'file' && entry.name.startsWith('backup-' + safeName) && entry.name.endsWith('.json')) {
+                backupFiles.push(entry.name);
+            }
+        }
+        const sorted = backupFiles.sort().reverse(); // más reciente primero
+        const toDelete = sorted.slice(10);
+        for (const name of toDelete) {
+            try { await handle.removeEntry(name); } catch { /* ignore */ }
+        }
+    } catch { /* rotation is best-effort */ }
+
     return { fileName, folderName: handle.name };
 }
 
@@ -297,4 +313,90 @@ export async function persistStorage() {
         }
     }
     return false;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FILE SYSTEM ACCESS — backup automático a carpeta local elegida
+// ═══════════════════════════════════════════════════════════════════
+/**
+ * El usuario elige una carpeta UNA VEZ y la app guarda ahí silenciosamente.
+ * Funciona en Chrome/Edge (no Firefox/Safari). Es la capa anti-pérdida definitiva
+ * porque el archivo vive en disco fuera del navegador.
+ *
+ * Guardamos handles en IDB porque no se pueden serializar a localStorage.
+ */
+const FS_HANDLE_KEY = 'dashboard_fs_backup_handle';
+
+export async function isFileSystemAccessSupported() {
+    return 'showDirectoryPicker' in window;
+}
+
+/**
+ * Pide al usuario elegir carpeta de backup y la guarda para uso futuro
+ */
+export async function setupFileSystemBackup() {
+    if (!('showDirectoryPicker' in window)) {
+        throw new Error('File System Access API no soportada (usá Chrome/Edge)');
+    }
+    const handle = await window.showDirectoryPicker({
+        mode: 'readwrite',
+        startIn: 'documents'
+    });
+    await set(FS_HANDLE_KEY, handle);
+    return handle;
+}
+
+export async function getFileSystemHandle() {
+    try {
+        const handle = await get(FS_HANDLE_KEY);
+        if (!handle) return null;
+        // Verificar que aún tengamos permiso
+        const perm = await handle.queryPermission({ mode: 'readwrite' });
+        if (perm === 'granted') return handle;
+        const req = await handle.requestPermission({ mode: 'readwrite' });
+        return req === 'granted' ? handle : null;
+    } catch {
+        return null;
+    }
+}
+
+export async function removeFileSystemBackup() {
+    await del(FS_HANDLE_KEY);
+}
+
+/**
+ * Guarda snapshot a la carpeta elegida. Mantiene los últimos 10 archivos rotados.
+ * Nombre: dashboard-YYYYMMDD-HHMM.json
+ */
+export async function saveToFileSystem(state) {
+    const handle = await getFileSystemHandle();
+    if (!handle) return { ok: false, reason: 'Sin handle' };
+
+    try {
+        const now = new Date();
+        const stamp = now.toISOString().slice(0, 16).replace(/[:T-]/g, '').slice(0, 12); // YYYYMMDDHHMM
+        const filename = `dashboard-${stamp}.json`;
+
+        const fileHandle = await handle.getFileHandle(filename, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify({ state, savedAt: now.toISOString(), version: 1 }, null, 2));
+        await writable.close();
+
+        // Rotación: mantener últimos 10
+        const filesToKeep = new Set();
+        for await (const entry of handle.values()) {
+            if (entry.kind === 'file' && entry.name.startsWith('dashboard-') && entry.name.endsWith('.json')) {
+                filesToKeep.add(entry.name);
+            }
+        }
+        const sortedNames = [...filesToKeep].sort().reverse();
+        const toDelete = sortedNames.slice(10);
+        for (const name of toDelete) {
+            try { await handle.removeEntry(name); } catch { /* ignore */ }
+        }
+
+        return { ok: true, filename };
+    } catch (err) {
+        return { ok: false, reason: err.message };
+    }
 }
