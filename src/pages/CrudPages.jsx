@@ -4,7 +4,7 @@ import {
     ArrowRightLeft, UserCheck, ShoppingBag, PiggyBank
 } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
-import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, BarChart, fmtMoney, fmtDate, CHART_COLORS, InfoBox } from '../components/UI';
+import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, BarChart, fmtMoney, fmtDate, CHART_COLORS, InfoBox, DateRangeFilter, filterByDateRange, describeDateRange } from '../components/UI';
 
 // ═══════════════════════════ CLIENTES ═══════════════════════════
 export function ClientesPage() {
@@ -178,13 +178,19 @@ export function GastosPage() {
     const current = state.meta.currentSucursalId || 'all';
     const [open, setOpen] = useState(false);
     const [editId, setEditId] = useState(null);
+    const [range, setRange] = useState({ type: 'month' });
     const EMPTY = { concepto: '', monto: '', categoria: 'Alquiler', fecha: new Date().toISOString().slice(0, 10), sucursalId: '', metodo: 'Efectivo', notas: '', recurrente: false, frecuencia: 'mensual' };
     const [form, setForm] = useState(EMPTY);
 
     const CATEGORIAS = ['Alquiler', 'Sueldos', 'Servicios', 'Mercadería', 'Impuestos', 'Marketing', 'Mantenimiento', 'Transporte', 'Papelería', 'Otros'];
     const METODOS = ['Efectivo', 'Transferencia', 'Débito', 'Crédito', 'Cheque'];
 
-    const gastos = filterBySucursal(state.gastos, current).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+    const gastosRaw = filterBySucursal(state.gastos, current);
+    const gastos = useMemo(() =>
+        filterByDateRange(gastosRaw, range, g => g.fecha).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')),
+        [gastosRaw, range]
+    );
+    const totalPeriodo = gastos.reduce((s, g) => s + Number(g.monto || 0), 0);
     const totalMes = gastos.filter(g => (g.fecha || '').startsWith(new Date().toISOString().slice(0, 7))).reduce((s, g) => s + Number(g.monto || 0), 0);
 
     const porCategoria = useMemo(() => {
@@ -212,10 +218,16 @@ export function GastosPage() {
                 help={SECTION_HELP.gastos}
                 actions={<button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}><Plus size={14} /> Nuevo gasto</button>}
             />
+            <div style={{ marginBottom: 12 }}>
+                <DateRangeFilter value={range} onChange={setRange} />
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                    📅 {describeDateRange(range)} · {gastos.length} gasto{gastos.length !== 1 ? 's' : ''} · Total período: <strong>{fmtMoney(totalPeriodo, state.business.moneda)}</strong>
+                </div>
+            </div>
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<Receipt size={20} />} label="Gastos totales" value={gastos.length} color="#63f1cb" />
-                <KpiCard icon={<Receipt size={20} />} label="Gastado este mes" value={fmtMoney(totalMes, state.business.moneda)} color="#ef4444" />
-                <KpiCard icon={<Receipt size={20} />} label="Total histórico" value={fmtMoney(gastos.reduce((s, g) => s + Number(g.monto || 0), 0), state.business.moneda)} color="#f59e0b" />
+                <KpiCard icon={<Receipt size={20} />} label="Gastos en período" value={gastos.length} color="#63f1cb" />
+                <KpiCard icon={<Receipt size={20} />} label="Total período" value={fmtMoney(totalPeriodo, state.business.moneda)} color="#ef4444" />
+                <KpiCard icon={<Receipt size={20} />} label="Este mes" value={fmtMoney(totalMes, state.business.moneda)} color="#f59e0b" />
             </div>
             {porCategoria.length > 0 && <Card title="Gastos por categoría (histórico)" style={{ marginBottom: 16 }}><BarChart data={porCategoria} /></Card>}
             <Card>
@@ -905,6 +917,7 @@ export function PedidosPage() {
     const current = state.meta.currentSucursalId || 'all';
     const [open, setOpen] = useState(false);
     const [editId, setEditId] = useState(null);
+    const [range, setRange] = useState({ type: 'month' });
     const EMPTY = { fecha: new Date().toISOString().slice(0, 10), canal: 'WhatsApp', clienteNombre: '', clienteTel: '', total: '', estado: 'pendiente', sucursalId: '', notas: '' };
     const [form, setForm] = useState(EMPTY);
 
@@ -917,7 +930,12 @@ export function PedidosPage() {
         { id: 'cancelado', label: 'Cancelado', variant: 'danger' }
     ];
 
-    const pedidos = filterBySucursal(state.pedidos, current).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+    const pedidosRaw = filterBySucursal(state.pedidos, current);
+    const pedidos = useMemo(() =>
+        filterByDateRange(pedidosRaw, range, p => p.fecha).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')),
+        [pedidosRaw, range]
+    );
+    const totalPeriodo = pedidos.reduce((s, p) => s + Number(p.total || 0), 0);
 
     const save = () => {
         if (!form.clienteNombre.trim()) return alert('Nombre del cliente');
@@ -937,8 +955,14 @@ export function PedidosPage() {
                 help={SECTION_HELP.pedidos}
                 actions={<button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY, sucursalId: current !== 'all' ? current : (state.sucursales[0]?.id || '') }); setEditId(null); setOpen(true); }} disabled={state.sucursales.length === 0}><Plus size={14} /> Nuevo pedido</button>}
             />
+            <div style={{ marginBottom: 12 }}>
+                <DateRangeFilter value={range} onChange={setRange} />
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                    📅 {describeDateRange(range)} · {pedidos.length} pedido{pedidos.length !== 1 ? 's' : ''} · Total: <strong>{fmtMoney(totalPeriodo, state.business.moneda)}</strong>
+                </div>
+            </div>
             <div className="kpi-grid mb-4">
-                <KpiCard icon={<ShoppingBag size={20} />} label="Pedidos totales" value={pedidos.length} color="#63f1cb" />
+                <KpiCard icon={<ShoppingBag size={20} />} label="Pedidos período" value={pedidos.length} color="#63f1cb" />
                 <KpiCard icon={<ShoppingBag size={20} />} label="Pendientes" value={pedidos.filter(p => p.estado === 'pendiente').length} color="#f59e0b" />
                 <KpiCard icon={<ShoppingBag size={20} />} label="En curso" value={pedidos.filter(p => ['preparando', 'enviado'].includes(p.estado)).length} color="#60a5fa" />
                 <KpiCard icon={<ShoppingBag size={20} />} label="Entregados" value={pedidos.filter(p => p.estado === 'entregado').length} color="#22c55e" />
