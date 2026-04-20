@@ -3,7 +3,7 @@ import {
     TrendingUp, DollarSign, ShoppingCart, Users, Package,
     AlertTriangle, Store, Home, Calendar, RotateCcw, Settings as SettingsIcon,
     Bot, FileText, Receipt, ArrowRight, Flame, Clock, Armchair,
-    Megaphone, Zap, Plus
+    Megaphone, Zap, Plus, RefreshCw
 } from 'lucide-react';
 import { useData, filterBySucursal, getRubroLabels, SECTION_HELP } from '../store/DataContext';
 import { PageHeader, Card, KpiCard, EmptyState, BarChart, LineChart, fmtMoney, CHART_COLORS, InfoBox, DateRangeFilter, filterByDateRange, describeDateRange } from '../components/UI';
@@ -198,6 +198,7 @@ export default function DashboardHome({ onNavigate }) {
                 help={SECTION_HELP.home}
                 actions={
                     <>
+                        <SyncAllButton state={state} actions={actions} />
                         <button
                             className="btn btn-ghost btn-sm"
                             onClick={() => {
@@ -564,6 +565,178 @@ function QuickAction({ icon: Icon, label, accent, onClick, badge }) {
                 }}>
                     {badge}
                 </div>
+            )}
+        </button>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SYNC ALL BUTTON — traer en paralelo productos + clientes + orders web
+// ═══════════════════════════════════════════════════════════════════
+function SyncAllButton({ state, actions }) {
+    const [syncing, setSyncing] = React.useState(false);
+    const [progress, setProgress] = React.useState({ productos: 0, clientes: 0, orders: 0 });
+    const [result, setResult] = React.useState(null);
+
+    const hasWoo = state.integraciones.wooStoreUrl && state.integraciones.wooConsumerKey && state.integraciones.wooConsumerSecret;
+    if (!hasWoo) return null;
+
+    const syncAll = async () => {
+        if (!confirm('¿Sincronizar productos, clientes y pedidos desde tu web WooCommerce? Puede tardar 30-60s.')) return;
+
+        setSyncing(true);
+        setProgress({ productos: 0, clientes: 0, orders: 0 });
+        setResult(null);
+
+        try {
+            const { wooApiFetch } = await import('../utils/wooClient');
+
+            // Paralelo: productos + clientes + orders últimos 30 días
+            const [prodResult, custResult, orderResult] = await Promise.all([
+                // PRODUCTOS con fotos
+                (async () => {
+                    let all = [];
+                    for (let page = 1; page <= 10; page++) {
+                        const { data, error } = await wooApiFetch('products?per_page=100&page=' + page, state);
+                        if (error) throw new Error('Productos: ' + error);
+                        if (!data?.length) break;
+                        all = all.concat(data);
+                        setProgress(p => ({ ...p, productos: all.length }));
+                        if (data.length < 100) break;
+                    }
+                    return all;
+                })(),
+                // CLIENTES
+                (async () => {
+                    let all = [];
+                    for (let page = 1; page <= 5; page++) {
+                        const { data, error } = await wooApiFetch('customers?per_page=100&page=' + page, state);
+                        if (error) throw new Error('Clientes: ' + error);
+                        if (!data?.length) break;
+                        all = all.concat(data);
+                        setProgress(p => ({ ...p, clientes: all.length }));
+                        if (data.length < 100) break;
+                    }
+                    return all;
+                })(),
+                // ORDERS últimos 30 días
+                (async () => {
+                    const after = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+                    const { data, error } = await wooApiFetch('orders?per_page=100&after=' + encodeURIComponent(after), state);
+                    if (error) throw new Error('Orders: ' + error);
+                    setProgress(p => ({ ...p, orders: data?.length || 0 }));
+                    return data || [];
+                })()
+            ]);
+
+            // Procesar productos: agregar nuevos, actualizar stock + foto
+            let prodNew = 0, prodUpd = 0;
+            const prodByKey = new Map();
+            (state.productos || []).forEach(p => {
+                if (p.codigo) prodByKey.set(String(p.codigo).toLowerCase(), p);
+                if (p.wooProductId) prodByKey.set('woo-' + p.wooProductId, p);
+            });
+            const prodNuevos = [];
+            for (const wp of prodResult) {
+                const sku = (wp.sku || '').toLowerCase().trim();
+                const existe = prodByKey.get(sku) || prodByKey.get('woo-' + wp.id);
+                const mainImage = wp.images?.[0]?.src || null;
+                if (!existe) {
+                    prodNuevos.push({
+                        nombre: wp.name, codigo: wp.sku || null,
+                        categoria: wp.categories?.[0]?.name || 'General',
+                        precioVenta: Number(wp.price || 0), precioCosto: 0,
+                        stock: Number(wp.stock_quantity || 0), stockMinimo: 5, unidad: 'unidad',
+                        descripcion: (wp.short_description || '').replace(/<[^>]+>/g, '').slice(0, 500),
+                        activo: wp.status === 'publish',
+                        imagen: mainImage, imagenes: (wp.images || []).map(i => i.src),
+                        wooProductId: wp.id, origen: 'woocommerce'
+                    });
+                    prodNew++;
+                } else {
+                    const patch = {};
+                    if (mainImage && !existe.imagen) patch.imagen = mainImage;
+                    if (wp.stock_quantity != null && existe.stock !== Number(wp.stock_quantity)) patch.stock = Number(wp.stock_quantity);
+                    if (!existe.wooProductId) patch.wooProductId = wp.id;
+                    if (Object.keys(patch).length) { actions.update('productos', existe.id, patch); prodUpd++; }
+                }
+            }
+            if (prodNuevos.length) actions.bulkAdd('productos', prodNuevos);
+
+            // Procesar clientes: agregar nuevos
+            let custNew = 0;
+            const custByEmail = new Set((state.clientes || []).map(c => (c.email || '').toLowerCase()).filter(Boolean));
+            const custNuevos = [];
+            for (const c of custResult) {
+                const email = (c.email || '').toLowerCase();
+                if (!email || custByEmail.has(email)) continue;
+                custNuevos.push({
+                    nombre: ((c.first_name || '') + ' ' + (c.last_name || '')).trim() || c.username || 'Cliente web',
+                    email: c.email, telefono: c.billing?.phone || '',
+                    direccion: [c.billing?.address_1, c.billing?.address_2].filter(Boolean).join(', '),
+                    ciudad: c.billing?.city || '',
+                    notas: 'Importado de WooCommerce #' + c.id,
+                    wooCustomerId: c.id, origen: 'woocommerce'
+                });
+                custNew++;
+            }
+            if (custNuevos.length) actions.bulkAdd('clientes', custNuevos);
+
+            setResult({
+                productos: { nuevos: prodNew, actualizados: prodUpd, total: prodResult.length },
+                clientes: { nuevos: custNew, total: custResult.length },
+                orders: { total: orderResult.length }
+            });
+            setTimeout(() => setResult(null), 10000);
+        } catch (err) {
+            setResult({ error: err.message });
+            setTimeout(() => setResult(null), 10000);
+        } finally {
+            setSyncing(false);
+        }
+    };
+
+    if (result) {
+        const colorOk = 'linear-gradient(135deg, rgba(34,197,94,0.12), rgba(34,197,94,0.04))';
+        const colorErr = 'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(239,68,68,0.04))';
+        return (
+            <div style={{
+                padding: '8px 14px',
+                background: result.error ? colorErr : colorOk,
+                border: '1px solid ' + (result.error ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)'),
+                borderRadius: 8, fontSize: 11, lineHeight: 1.5
+            }}>
+                {result.error ? (
+                    <span style={{ color: '#ef4444' }}>❌ {result.error}</span>
+                ) : (
+                    <span>
+                        ✅ <strong>Sync OK:</strong>{' '}
+                        {result.productos.nuevos}+{result.productos.actualizados} productos ·{' '}
+                        {result.clientes.nuevos} clientes nuevos ·{' '}
+                        {result.orders.total} orders
+                    </span>
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <button
+            className="btn btn-ghost btn-sm"
+            onClick={syncAll}
+            disabled={syncing}
+            title="Traer productos, clientes y pedidos desde tu tienda web"
+            style={{ position: 'relative' }}
+        >
+            {syncing ? (
+                <>
+                    <RefreshCw size={13} className="spin" />
+                    <span>Sync... {progress.productos + progress.clientes + progress.orders}</span>
+                </>
+            ) : (
+                <>
+                    🌐 Sync web
+                </>
             )}
         </button>
     );
