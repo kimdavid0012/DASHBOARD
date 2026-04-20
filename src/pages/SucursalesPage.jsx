@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Store, Plus, Pencil, Trash2, MapPin, Phone, User as UserIcon } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Store, Plus, Pencil, Trash2, MapPin, Phone, User as UserIcon, TrendingUp, BarChart3 } from 'lucide-react';
 import { useData, SECTION_HELP } from '../store/DataContext';
-import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard } from '../components/UI';
+import { PageHeader, Card, Modal, Field, EmptyState, Badge, KpiCard, BarChart, DateRangeFilter, filterByDateRange, describeDateRange, fmtMoney, CHART_COLORS } from '../components/UI';
 import { useT } from '../i18n';
 
 const PROVINCIAS = ['Buenos Aires', 'CABA', 'Catamarca', 'Chaco', 'Chubut', 'Córdoba', 'Corrientes', 'Entre Ríos', 'Formosa', 'Jujuy', 'La Pampa', 'La Rioja', 'Mendoza', 'Misiones', 'Neuquén', 'Río Negro', 'Salta', 'San Juan', 'San Luis', 'Santa Cruz', 'Santa Fe', 'Santiago del Estero', 'Tierra del Fuego', 'Tucumán'];
@@ -18,6 +18,7 @@ export default function SucursalesPage() {
     const [modalOpen, setModalOpen] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [form, setForm] = useState(EMPTY);
+    const [range, setRange] = useState({ type: 'month' });
 
     const openNew = () => { setForm(EMPTY); setEditingId(null); setModalOpen(true); };
     const openEdit = (s) => { setForm({ ...EMPTY, ...s }); setEditingId(s.id); setModalOpen(true); };
@@ -43,6 +44,32 @@ export default function SucursalesPage() {
 
     const sucursales = state.sucursales || [];
 
+    // KPIs comparativos por sucursal (ventas + gastos + ticket prom) en el rango seleccionado
+    const ventasPeriodo = useMemo(() => filterByDateRange(state.ventas || [], range, v => v.fecha), [state.ventas, range]);
+    const gastosPeriodo = useMemo(() => filterByDateRange(state.gastos || [], range, g => g.fecha), [state.gastos, range]);
+
+    const comparativa = useMemo(() => {
+        return sucursales.map(s => {
+            const vs = ventasPeriodo.filter(v => v.sucursalId === s.id);
+            const gs = gastosPeriodo.filter(g => g.sucursalId === s.id);
+            const total = vs.reduce((sum, v) => sum + Number(v.total || 0), 0);
+            const gastos = gs.reduce((sum, g) => sum + Number(g.monto || 0), 0);
+            const ticketProm = vs.length ? total / vs.length : 0;
+            return {
+                id: s.id, nombre: s.nombre,
+                ventasCount: vs.length, total, gastos, ticketProm,
+                margen: total - gastos
+            };
+        }).sort((a, b) => b.total - a.total);
+    }, [sucursales, ventasPeriodo, gastosPeriodo]);
+
+    const chartData = comparativa.map((c, i) => ({
+        label: c.nombre,
+        value: c.total,
+        display: fmtMoney(c.total, state.business.moneda),
+        color: CHART_COLORS[i % CHART_COLORS.length]
+    }));
+
     return (
         <div>
             <PageHeader
@@ -57,6 +84,77 @@ export default function SucursalesPage() {
                 <KpiCard icon={<UserIcon size={20} />} label="Empleados totales" value={state.empleados.length} color="#60a5fa" />
                 <KpiCard icon={<MapPin size={20} />} label="Ciudades cubiertas" value={new Set(sucursales.map(s => s.ciudad).filter(Boolean)).size} color="#a855f7" />
             </div>
+
+            {/* COMPARATIVA entre sucursales */}
+            {sucursales.length > 1 && (
+                <Card title={<span><BarChart3 size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />Comparativa entre sucursales</span>} style={{ marginBottom: 16 }}>
+                    <div style={{ marginBottom: 12 }}>
+                        <DateRangeFilter value={range} onChange={setRange} />
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                            📅 {describeDateRange(range)}
+                        </div>
+                    </div>
+
+                    {/* Chart de ventas */}
+                    {chartData.some(d => d.value > 0) && (
+                        <div style={{ marginBottom: 20 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text-muted)' }}>Ranking por ventas del período</div>
+                            <BarChart data={chartData} />
+                        </div>
+                    )}
+
+                    {/* Tabla comparativa */}
+                    <div className="table-wrap">
+                        <table className="table">
+                            <thead>
+                                <tr>
+                                    <th>Sucursal</th>
+                                    <th style={{ textAlign: 'right' }}>Operaciones</th>
+                                    <th style={{ textAlign: 'right' }}>Ventas</th>
+                                    <th style={{ textAlign: 'right' }}>Gastos</th>
+                                    <th style={{ textAlign: 'right' }}>Ticket prom.</th>
+                                    <th style={{ textAlign: 'right' }}>Margen</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {comparativa.map((c, i) => (
+                                    <tr key={c.id}>
+                                        <td>
+                                            <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: CHART_COLORS[i % CHART_COLORS.length], marginRight: 8, verticalAlign: 'middle' }} />
+                                            <span className="font-semibold">{c.nombre}</span>
+                                            {i === 0 && comparativa.length > 1 && <Badge variant="success" style={{ marginLeft: 8 }}>🏆 Top</Badge>}
+                                        </td>
+                                        <td style={{ textAlign: 'right' }} className="mono">{c.ventasCount}</td>
+                                        <td style={{ textAlign: 'right', fontWeight: 600 }} className="mono">{fmtMoney(c.total, state.business.moneda)}</td>
+                                        <td style={{ textAlign: 'right', color: 'var(--danger)' }} className="mono">-{fmtMoney(c.gastos, state.business.moneda)}</td>
+                                        <td style={{ textAlign: 'right' }} className="mono">{fmtMoney(c.ticketProm, state.business.moneda)}</td>
+                                        <td style={{ textAlign: 'right', fontWeight: 700, color: c.margen >= 0 ? 'var(--success)' : 'var(--danger)' }} className="mono">
+                                            {c.margen >= 0 ? '+' : ''}{fmtMoney(c.margen, state.business.moneda)}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {/* Fila totales */}
+                                <tr style={{ borderTop: '2px solid var(--border-strong)', background: 'var(--bg-elevated)' }}>
+                                    <td style={{ fontWeight: 700 }}>TOTAL</td>
+                                    <td style={{ textAlign: 'right', fontWeight: 700 }} className="mono">
+                                        {comparativa.reduce((s, c) => s + c.ventasCount, 0)}
+                                    </td>
+                                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }} className="mono">
+                                        {fmtMoney(comparativa.reduce((s, c) => s + c.total, 0), state.business.moneda)}
+                                    </td>
+                                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }} className="mono">
+                                        -{fmtMoney(comparativa.reduce((s, c) => s + c.gastos, 0), state.business.moneda)}
+                                    </td>
+                                    <td style={{ textAlign: 'right' }} className="mono">—</td>
+                                    <td style={{ textAlign: 'right', fontWeight: 700 }} className="mono">
+                                        {fmtMoney(comparativa.reduce((s, c) => s + c.margen, 0), state.business.moneda)}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+            )}
 
             <Card>
                 {sucursales.length === 0 ? (
