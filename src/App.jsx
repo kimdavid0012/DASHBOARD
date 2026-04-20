@@ -6,7 +6,7 @@ import {
     Instagram, Music2, Globe, Settings as SettingsIcon,
     Armchair, CalendarClock, RotateCcw, FileText, Upload, Shield,
     CheckCircle2, AlertCircle, RefreshCw, Cloud, CloudOff, User,
-    Menu, X as XIcon, ChefHat
+    Menu, X as XIcon, ChefHat, Sun, Moon
 } from 'lucide-react';
 import { DataProvider, useData, getRubroConfig, shouldShowSection } from './store/DataContext';
 import { AuthProvider, useAuth } from './store/AuthContext';
@@ -89,6 +89,30 @@ function CloudSyncIndicator({ onNavigate }) {
             {syncing ? <RefreshCw size={12} className="spin" /> : error ? <AlertCircle size={12} /> : <Cloud size={12} />}
             <span>{syncing ? t('app.cloud_indicator.syncing') : error ? t('app.cloud_indicator.error') : lastSyncAt ? t('app.cloud_indicator.cloud') : t('app.cloud_indicator.pending')}</span>
         </div>
+    );
+}
+
+// ── Theme toggle (dark/light) ──────────────────────────────────────
+function ThemeToggle() {
+    const [theme, setTheme] = React.useState(() => {
+        return localStorage.getItem('theme') || 'dark';
+    });
+
+    React.useEffect(() => {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme);
+    }, [theme]);
+
+    return (
+        <button
+            onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+            className="save-indicator"
+            style={{ cursor: 'pointer', background: 'transparent' }}
+            title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+            aria-label="Toggle theme"
+        >
+            {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
+        </button>
     );
 }
 
@@ -432,6 +456,7 @@ function AppContent() {
                     <div className="topbar-right">
                         <SaveIndicator />
                         <CloudSyncIndicator onNavigate={setPage} />
+                        <ThemeToggle />
                         {state.sucursales.length > 0 && (
                             <div className="sucursal-switcher">
                                 <Store size={14} style={{ color: 'var(--text-muted)' }} />

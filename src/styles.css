@@ -2393,3 +2393,39 @@ h1, h2, h3, h4, h5, h6 {
     from { transform: translateY(20px); opacity: 0; }
     to   { transform: translateY(0);    opacity: 1; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   LIGHT MODE — activado con data-theme="light" en <html>
+   ═══════════════════════════════════════════════════════════════ */
+html[data-theme="light"] {
+    --bg-app: #fafafa;
+    --bg-sidebar: #f4f4f6;
+    --bg-card: #ffffff;
+    --bg-elevated: #f0f0f3;
+    --bg-hover: rgba(0, 0, 0, 0.03);
+
+    --text-primary: #0a0a0f;
+    --text-secondary: #3a3a48;
+    --text-muted: #8a8a96;
+
+    --border-color: rgba(10, 10, 15, 0.08);
+    --border-strong: rgba(10, 10, 15, 0.16);
+    --border-accent: rgba(31, 181, 143, 0.3);
+
+    --accent: #1fb58f;
+    --accent-2: #c9822b;
+    --accent-hover: #15956f;
+    --accent-soft: rgba(31, 181, 143, 0.08);
+    --accent-glow: rgba(31, 181, 143, 0.18);
+
+    --success: #16a34a;
+    --warning: #d97706;
+    --danger: #dc2626;
+    --info: #2563eb;
+    --purple: #7c3aed;
+}
+
+/* Scrollbar light */
+html[data-theme="light"] ::-webkit-scrollbar-track { background: #ededf0; }
+html[data-theme="light"] ::-webkit-scrollbar-thumb { background: #c4c4cc; }
+html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #a8a8b0; }
