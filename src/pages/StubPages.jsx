@@ -1023,6 +1023,8 @@ function InstagramDashboard({ state }) {
             return cached ? JSON.parse(cached) : null;
         } catch { return null; }
     });
+    const [selected, setSelected] = React.useState(new Set());
+    const { actions } = useData();
 
     const igId = state.integraciones.instagramBusinessId;
     const token = state.integraciones.metaAccessToken;
@@ -1114,56 +1116,135 @@ function InstagramDashboard({ state }) {
                     </div>
 
                     {media.length > 0 && (
-                        <Card title="📸 Últimos posts" subtitle={`${media.length} publicaciones recientes`}>
+                        <Card
+                            title="📸 Últimos posts"
+                            subtitle={`${media.length} publicaciones · ${selected.size} seleccionado${selected.size !== 1 ? 's' : ''}`}
+                            actions={
+                                selected.size > 0 ? (
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}>
+                                            Limpiar
+                                        </button>
+                                        <button
+                                            className="btn btn-primary btn-sm"
+                                            onClick={() => {
+                                                if (!confirm(`¿Crear ${selected.size} producto(s) con las fotos de Instagram seleccionadas?`)) return;
+                                                const posts = media.filter(m => selected.has(m.id));
+                                                const nuevos = posts.map((m, i) => {
+                                                    const caption = (m.caption || '').slice(0, 100);
+                                                    return {
+                                                        nombre: caption.split('\n')[0] || ('Post IG #' + (i + 1)),
+                                                        codigo: 'IG-' + m.id.slice(-8),
+                                                        categoria: 'Instagram',
+                                                        precioVenta: 0,
+                                                        precioCosto: 0,
+                                                        stock: 0,
+                                                        stockMinimo: 0,
+                                                        unidad: 'unidad',
+                                                        descripcion: (m.caption || '').slice(0, 500),
+                                                        activo: true,
+                                                        imagen: m.thumbnail_url || m.media_url,
+                                                        imagenes: [m.thumbnail_url || m.media_url, m.media_url].filter(Boolean),
+                                                        igPostId: m.id,
+                                                        igPermalink: m.permalink,
+                                                        origen: 'instagram'
+                                                    };
+                                                });
+                                                actions.bulkAdd('productos', nuevos);
+                                                alert('✅ ' + nuevos.length + ' producto(s) creado(s) desde Instagram. Editá precios y stock en la sección de Productos.');
+                                                setSelected(new Set());
+                                            }}
+                                        >
+                                            🏷️ Crear {selected.size} producto{selected.size !== 1 ? 's' : ''}
+                                        </button>
+                                    </div>
+                                ) : null
+                            }
+                        >
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                                💡 <strong>Tip:</strong> Hacé click en los posts para seleccionarlos, después convertilos en productos del catálogo (con foto incluida).
+                            </div>
                             <div style={{
                                 display: 'grid',
                                 gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
                                 gap: 10
                             }}>
-                                {media.map(m => (
-                                    <a
-                                        key={m.id}
-                                        href={m.permalink}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        style={{
-                                            position: 'relative',
-                                            display: 'block',
-                                            aspectRatio: '1',
-                                            borderRadius: 10,
-                                            overflow: 'hidden',
-                                            background: 'var(--bg-elevated)',
-                                            textDecoration: 'none',
-                                            color: 'inherit'
-                                        }}
-                                    >
-                                        <img
-                                            src={m.thumbnail_url || m.media_url}
-                                            alt=""
-                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                        />
-                                        <div style={{
-                                            position: 'absolute',
-                                            bottom: 0, left: 0, right: 0,
-                                            padding: '24px 8px 8px',
-                                            background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
-                                            color: 'white',
-                                            fontSize: 11,
-                                            display: 'flex',
-                                            gap: 8,
-                                            justifyContent: 'space-between'
-                                        }}>
-                                            <span>❤️ {(m.like_count || 0).toLocaleString('es-AR')}</span>
-                                            <span>💬 {(m.comments_count || 0).toLocaleString('es-AR')}</span>
+                                {media.map(m => {
+                                    const isSel = selected.has(m.id);
+                                    return (
+                                        <div
+                                            key={m.id}
+                                            onClick={() => {
+                                                const next = new Set(selected);
+                                                if (next.has(m.id)) next.delete(m.id);
+                                                else next.add(m.id);
+                                                setSelected(next);
+                                            }}
+                                            style={{
+                                                position: 'relative',
+                                                aspectRatio: '1',
+                                                borderRadius: 10,
+                                                overflow: 'hidden',
+                                                background: 'var(--bg-elevated)',
+                                                cursor: 'pointer',
+                                                border: isSel ? '3px solid var(--accent)' : '3px solid transparent',
+                                                transition: 'border 0.15s',
+                                                boxShadow: isSel ? '0 0 20px var(--accent-glow)' : 'none'
+                                            }}
+                                        >
+                                            <img
+                                                src={m.thumbnail_url || m.media_url}
+                                                alt=""
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                            />
+                                            {/* Selection overlay */}
+                                            {isSel && (
+                                                <div style={{
+                                                    position: 'absolute', top: 6, left: 6,
+                                                    width: 24, height: 24, borderRadius: '50%',
+                                                    background: 'var(--accent)', color: '#0a0a0f',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    fontSize: 14, fontWeight: 800
+                                                }}>✓</div>
+                                            )}
+                                            {/* Link externo */}
+                                            <a
+                                                href={m.permalink}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                onClick={e => e.stopPropagation()}
+                                                style={{
+                                                    position: 'absolute', top: 6, right: 6,
+                                                    width: 28, height: 28, borderRadius: '50%',
+                                                    background: 'rgba(0,0,0,0.6)', color: 'white',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    fontSize: 12, textDecoration: 'none'
+                                                }}
+                                                title="Abrir en Instagram"
+                                            >↗</a>
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: 0, left: 0, right: 0,
+                                                padding: '24px 8px 8px',
+                                                background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
+                                                color: 'white',
+                                                fontSize: 11,
+                                                display: 'flex',
+                                                gap: 8,
+                                                justifyContent: 'space-between'
+                                            }}>
+                                                <span>❤️ {(m.like_count || 0).toLocaleString('es-AR')}</span>
+                                                <span>💬 {(m.comments_count || 0).toLocaleString('es-AR')}</span>
+                                            </div>
+                                            {m.media_type === 'VIDEO' && (
+                                                <div style={{ position: 'absolute', top: 8, right: 40, fontSize: 14 }}>🎬</div>
+                                            )}
+                                            {m.media_type === 'CAROUSEL_ALBUM' && (
+                                                <div style={{ position: 'absolute', top: 8, right: 40, fontSize: 14 }}>🎞️</div>
+                                            )}
                                         </div>
-                                        {m.media_type === 'VIDEO' && (
-                                            <div style={{ position: 'absolute', top: 8, right: 8, fontSize: 14 }}>🎬</div>
-                                        )}
-                                        {m.media_type === 'CAROUSEL_ALBUM' && (
-                                            <div style={{ position: 'absolute', top: 8, right: 8, fontSize: 14 }}>🎞️</div>
-                                        )}
-                                    </a>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </Card>
                     )}
