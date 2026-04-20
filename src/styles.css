@@ -2387,3 +2387,9 @@ h1, h2, h3, h4, h5, h6 {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.7; transform: scale(1.15); }
 }
+
+/* PWA install prompt entry */
+@keyframes slideUpFadeIn {
+    from { transform: translateY(20px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+}

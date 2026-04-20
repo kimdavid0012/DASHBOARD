@@ -30,6 +30,7 @@ import { MarketingPage, AgentsPage, InstagramPage, TikTokPage, AnalyticsPage, We
 import { MesasPage, ReservasPage, KDSPage } from './pages/RestaurantPages';
 import OnboardingModal from './components/OnboardingModal';
 import CelaBot from './components/CelaBot';
+import InstallPrompt from './components/InstallPrompt';
 
 const RUBRO_EMOJI = {
     kiosco: '🏪', restaurante: '🍽️', accesorios: '👗',
@@ -53,10 +54,29 @@ function SaveIndicator() {
     return null;
 }
 
-// ── Cloud sync indicator (solo si está en modo cloud) ────────────
+// ── Cloud sync indicator (siempre visible, muestra estado offline/cloud) ──
 function CloudSyncIndicator({ onNavigate }) {
-    const { isCloud, syncStatus } = useAuth();
+    const { isCloud, isOffline, syncStatus, firebaseAvailable } = useAuth();
     const t = useT();
+
+    // Si Firebase no está ni configurado, no mostramos nada (la app funciona full-offline)
+    if (!firebaseAvailable) return null;
+
+    // Offline mode explícito
+    if (isOffline) {
+        return (
+            <div
+                className="save-indicator"
+                onClick={() => onNavigate?.('account')}
+                style={{ cursor: 'pointer', color: 'var(--text-muted)', opacity: 0.7 }}
+                title="Haciendo clic vas a Cuenta para activar sync en la nube"
+            >
+                <Cloud size={12} style={{ opacity: 0.5 }} />
+                <span>Local</span>
+            </div>
+        );
+    }
+
     if (!isCloud) return null;
 
     const { syncing, lastSyncAt, error } = syncStatus;
@@ -433,6 +453,7 @@ function AppContent() {
 
             {showOnboarding && <OnboardingModal />}
             {!showOnboarding && <CelaBot />}
+            {!showOnboarding && <InstallPrompt />}
         </div>
     );
 }
