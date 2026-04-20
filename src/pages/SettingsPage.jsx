@@ -264,6 +264,14 @@ export default function SettingsPage() {
                             <input className="input" placeholder="Mi Tienda" value={state.integraciones.resendFromName || ''} onChange={e => { actions.updateIntegraciones({ resendFromName: e.target.value }); showSaved(); }} />
                         </Field>
                     </div>
+
+                    <div style={{ marginTop: 16, padding: 12, background: 'var(--bg-elevated)', borderRadius: 10 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>🔎 Probar integraciones</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                            Verificá si tus keys funcionan. Los tests tocan los servicios reales pero no modifican nada.
+                        </div>
+                        <IntegrationTester state={state} />
+                    </div>
                 </Card>
 
                 {/* BACKUP */}
@@ -671,5 +679,170 @@ function NotificationsCard({ currentLang }) {
                 </div>
             )}
         </Card>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INTEGRATION TESTER — verifica si las keys funcionan de verdad
+// ═══════════════════════════════════════════════════════════════════
+function IntegrationTester({ state }) {
+    const [results, setResults] = React.useState({});
+
+    const setResult = (key, status, msg) => {
+        setResults(r => ({ ...r, [key]: { status, msg, at: new Date().toISOString() } }));
+    };
+
+    const testAnthropic = async () => {
+        const key = state.integraciones.anthropicKey;
+        if (!key) { setResult('anthropic', 'warn', 'Sin key configurada'); return; }
+        setResult('anthropic', 'loading', 'Probando...');
+        try {
+            const res = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+                body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 10, messages: [{ role: 'user', content: 'ping' }] })
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error.message);
+            setResult('anthropic', 'ok', '✅ Anthropic responde OK');
+        } catch (err) {
+            setResult('anthropic', 'err', '❌ ' + err.message);
+        }
+    };
+
+    const testOpenAI = async () => {
+        const key = state.integraciones.openaiKey;
+        if (!key) { setResult('openai', 'warn', 'Sin key configurada'); return; }
+        setResult('openai', 'loading', 'Probando...');
+        try {
+            const res = await fetch('https://api.openai.com/v1/models', {
+                headers: { 'Authorization': 'Bearer ' + key }
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            setResult('openai', 'ok', '✅ OpenAI responde OK');
+        } catch (err) {
+            setResult('openai', 'err', '❌ ' + err.message);
+        }
+    };
+
+    const testMeta = async () => {
+        const token = state.integraciones.metaAccessToken;
+        if (!token) { setResult('meta', 'warn', 'Sin token configurado'); return; }
+        setResult('meta', 'loading', 'Probando...');
+        try {
+            const res = await fetch('https://graph.facebook.com/v19.0/me?access_token=' + token);
+            const data = await res.json();
+            if (data.error) throw new Error(data.error.message);
+            setResult('meta', 'ok', '✅ Meta OK — user: ' + (data.name || data.id));
+        } catch (err) {
+            setResult('meta', 'err', '❌ ' + err.message);
+        }
+    };
+
+    const testInstagram = async () => {
+        const token = state.integraciones.metaAccessToken;
+        const igId = state.integraciones.instagramBusinessId;
+        if (!token || !igId) { setResult('ig', 'warn', 'Falta token o IG ID'); return; }
+        setResult('ig', 'loading', 'Probando...');
+        try {
+            const res = await fetch('https://graph.facebook.com/v19.0/' + igId + '?fields=username,followers_count&access_token=' + token);
+            const data = await res.json();
+            if (data.error) throw new Error(data.error.message);
+            setResult('ig', 'ok', '✅ @' + data.username + ' · ' + (data.followers_count || '?') + ' seguidores');
+        } catch (err) {
+            setResult('ig', 'err', '❌ ' + err.message);
+        }
+    };
+
+    const testMetaAds = async () => {
+        const token = state.integraciones.metaAccessToken;
+        const adId = state.integraciones.metaAdAccountId;
+        if (!token || !adId) { setResult('ads', 'warn', 'Falta token o Ad Account ID'); return; }
+        setResult('ads', 'loading', 'Probando...');
+        try {
+            const res = await fetch('https://graph.facebook.com/v19.0/' + adId + '?fields=name,currency&access_token=' + token);
+            const data = await res.json();
+            if (data.error) throw new Error(data.error.message);
+            setResult('ads', 'ok', '✅ ' + data.name + ' (' + data.currency + ')');
+        } catch (err) {
+            setResult('ads', 'err', '❌ ' + err.message);
+        }
+    };
+
+    const testWoo = async () => {
+        const url = state.integraciones.wooStoreUrl;
+        const ck = state.integraciones.wooConsumerKey;
+        const cs = state.integraciones.wooConsumerSecret;
+        if (!url || !ck || !cs) { setResult('woo', 'warn', 'Faltan credenciales'); return; }
+        setResult('woo', 'loading', 'Probando (puede usar proxy)...');
+        try {
+            const { wooApiFetch } = await import('../utils/wooClient');
+            const { data, error, via } = await wooApiFetch('products?per_page=1', state);
+            if (error) throw new Error(error);
+            setResult('woo', 'ok', '✅ WooCommerce OK vía ' + via + (data?.length ? ' · ' + data.length + ' producto' : ''));
+        } catch (err) {
+            setResult('woo', 'err', '❌ ' + err.message);
+        }
+    };
+
+    const testResend = async () => {
+        const key = state.integraciones.resendApiKey;
+        if (!key) { setResult('resend', 'warn', 'Sin API key'); return; }
+        setResult('resend', 'loading', 'Probando...');
+        try {
+            // Resend domains endpoint es inofensivo para testing
+            const res = await fetch('https://api.resend.com/domains', {
+                headers: { 'Authorization': 'Bearer ' + key }
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || 'HTTP ' + res.status);
+            }
+            setResult('resend', 'ok', '✅ Resend OK');
+        } catch (err) {
+            setResult('resend', 'err', '❌ ' + err.message);
+        }
+    };
+
+    const runAll = async () => {
+        await Promise.all([
+            testAnthropic(), testOpenAI(), testMeta(), testInstagram(),
+            testMetaAds(), testWoo(), testResend()
+        ]);
+    };
+
+    const services = [
+        { id: 'anthropic', label: '🤖 Anthropic (Claude)', fn: testAnthropic },
+        { id: 'openai', label: '🤖 OpenAI (GPT)', fn: testOpenAI },
+        { id: 'meta', label: '📘 Meta token', fn: testMeta },
+        { id: 'ig', label: '📸 Instagram Business', fn: testInstagram },
+        { id: 'ads', label: '📣 Meta Ads', fn: testMetaAds },
+        { id: 'woo', label: '🛒 WooCommerce', fn: testWoo },
+        { id: 'resend', label: '📧 Resend', fn: testResend }
+    ];
+
+    return (
+        <div>
+            <button className="btn btn-primary btn-sm" onClick={runAll} style={{ marginBottom: 10 }}>
+                🚀 Probar todo
+            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {services.map(s => {
+                    const r = results[s.id];
+                    const color = r?.status === 'ok' ? '#22c55e' : r?.status === 'err' ? '#ef4444' : r?.status === 'warn' ? '#f59e0b' : 'var(--text-muted)';
+                    return (
+                        <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, background: 'var(--bg-card)', borderRadius: 8, fontSize: 12 }}>
+                            <button onClick={s.fn} className="btn btn-ghost btn-sm" style={{ padding: '4px 10px', fontSize: 11 }}>
+                                Test
+                            </button>
+                            <span style={{ minWidth: 170, fontWeight: 600 }}>{s.label}</span>
+                            <span style={{ color, flex: 1, fontSize: 11 }}>
+                                {r?.status === 'loading' ? '⏳ ' + r.msg : r?.msg || '— sin probar —'}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
     );
 }
